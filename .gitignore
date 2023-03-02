@@ -3,6 +3,8 @@ cuda_*.exe
 miniconda3.exe
 vs_buildtools.exe
 
+# experiment samples
+examples/samples/*
 
 # all folders starting with _ are local
 _*/
