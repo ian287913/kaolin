@@ -5,6 +5,7 @@ vs_buildtools.exe
 
 # experiment samples
 examples/samples/*
+examples/tutorial/logs/*
 
 # all folders starting with _ are local
 _*/
