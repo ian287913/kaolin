@@ -7,6 +7,7 @@ from PIL import Image
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.widgets import Slider, Button
 
 import kaolin as kal
 
@@ -18,8 +19,10 @@ logs_path = './logs/'
 # We initialize the timelapse that will store USD for the visualization apps
 timelapse = kal.visualize.Timelapse(logs_path) 
 
+############################################################################################
+
 # Hyperparameters
-num_epoch = 50
+num_epoch = 5
 batch_size = 2
 laplacian_weight = 0.03
 image_weight = 0.1
@@ -35,51 +38,110 @@ texture_res = 400
 test_batch_ids = [2, 5, 10]
 test_batch_size = len(test_batch_ids)
 
-num_views = len(glob.glob(os.path.join(rendered_path,'*_rgb.png')))
-train_data = []
-for i in range(num_views):
-    data = kal.io.render.import_synthetic_view(
-        rendered_path, i, rgb=True, semantic=True)
-    train_data.append(data)
+############################################################################################
 
-print(num_views)
+train_data = None
+dataloader = None
+def create_dataloader():
+    global train_data
+    global dataloader
+    global rendered_path
 
-dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size,
-                                         shuffle=True, pin_memory=True) 
+    num_views = len(glob.glob(os.path.join(rendered_path,'*_rgb.png')))
+    train_data = []
+    for i in range(num_views):
+        data = kal.io.render.import_synthetic_view(
+            rendered_path, i, rgb=True, semantic=True)
+        train_data.append(data)
+    print(f"type(train_data) = {type(train_data)}")
+    print(f"type(train_data[0]) = {type(train_data[0])}")
+    print(f"train_data[0] = {train_data[0]}")
+    dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size,
+                                            shuffle=True, pin_memory=True) 
 
-mesh = kal.io.obj.import_mesh('../samples/sphere.obj', with_materials=True)
-# the sphere is usually too small (this is fine-tuned for the clock)
-vertices = mesh.vertices.cuda().unsqueeze(0) * 0.75
-vertices.requires_grad = True
-faces = mesh.faces.cuda()
-uvs = mesh.uvs.cuda().unsqueeze(0)
-face_uvs_idx = mesh.face_uvs_idx.cuda()
+############################################################################################
 
+mesh = None
+vertices = None
+faces = None
+face_uvs = None
+texture_map = None
 
-face_uvs = kal.ops.mesh.index_vertices_by_faces(uvs, face_uvs_idx).detach()
-face_uvs.requires_grad = False
+def prepare_mesh():
+    global mesh
+    global vertices
+    global faces
+    global face_uvs
+    global texture_map
 
-texture_map = torch.ones((1, 3, texture_res, texture_res), dtype=torch.float, device='cuda',
-                         requires_grad=True)
+    mesh = kal.io.obj.import_mesh('../samples/sphere.obj', with_materials=True)
+    # the sphere is usually too small (this is fine-tuned for the clock)
+    vertices = mesh.vertices.cuda().unsqueeze(0) * 0.75
+    vertices.requires_grad = True
+    print(f"vertices.shape = {vertices.shape}")
+    faces = mesh.faces.cuda()
+    uvs = mesh.uvs.cuda().unsqueeze(0)
+    face_uvs_idx = mesh.face_uvs_idx.cuda()
+    print(f"faces.type = {type(faces)}")
+    print(f"faces.shape = {faces.shape}")
+    print(f"uvs.shape = {uvs.shape}")
+    print(f"face_uvs_idx.shape = {face_uvs_idx.shape}")
 
-# The topology of the mesh and the uvs are constant
-# so we can initialize them on the first iteration only
-timelapse.add_mesh_batch(
-    iteration=0,
-    category='optimized_mesh',
-    faces_list=[mesh.faces.cpu()],
-    uvs_list=[mesh.uvs.cpu()],
-    face_uvs_idx_list=[mesh.face_uvs_idx.cpu()],
-)
+    face_uvs = kal.ops.mesh.index_vertices_by_faces(uvs, face_uvs_idx).detach()
+    face_uvs.requires_grad = False
+    print(f"face_uvs.shape = {face_uvs.shape}")
 
-## Separate vertices center as a learnable parameter
-vertices_init = vertices.clone().detach()
-vertices_init.requires_grad = False
-
-# This is the center of the optimized mesh, separating it as a learnable parameter helps the optimization. 
-vertice_shift = torch.zeros((3,), dtype=torch.float, device='cuda',
+    # ian: device, dtype, req_grad
+    texture_map = torch.ones((1, 3, texture_res, texture_res), dtype=torch.float, device='cuda',
                             requires_grad=True)
 
+    # The topology of the mesh and the uvs are constant
+    # so we can initialize them on the first iteration only
+    timelapse.add_mesh_batch(
+        iteration=0,
+        category='optimized_mesh',
+        faces_list=[mesh.faces.cpu()],
+        uvs_list=[mesh.uvs.cpu()],
+        face_uvs_idx_list=[mesh.face_uvs_idx.cpu()],
+    )
+
+############################################################################################
+
+vertices_init = None
+vertice_shift = None
+nb_faces = None
+face_size = None
+vertices_laplacian_matrix = None
+nb_vertices = None
+
+def prepare_loss():
+    global vertices_init
+    global vertice_shift
+    global nb_faces
+    global face_size
+    global vertices_laplacian_matrix
+    global nb_vertices
+
+    ## Separate vertices center as a learnable parameter
+    vertices_init = vertices.clone().detach()
+    vertices_init.requires_grad = False
+
+    # This is the center of the optimized mesh, separating it as a learnable parameter helps the optimization. 
+    vertice_shift = torch.zeros((3,), dtype=torch.float, device='cuda',
+                                requires_grad=True)
+    
+
+    nb_faces = faces.shape[0]
+    nb_vertices = vertices_init.shape[1]
+    face_size = 3
+
+    ## Set up auxiliary laplacian matrix for the laplacian loss
+    vertices_laplacian_matrix = kal.ops.mesh.uniform_laplacian(
+        nb_vertices, faces) 
+
+
+
+# (helper, not in main)
 def recenter_vertices(vertices, vertice_shift):
     """Recenter vertices on vertice_shift for better optimization"""
     vertices_min = vertices.min(dim=1, keepdim=True)[0]
@@ -88,37 +150,173 @@ def recenter_vertices(vertices, vertice_shift):
     vertices = vertices - vertices_mid + vertice_shift
     return vertices
 
+############################################################################################
 
-nb_faces = faces.shape[0]
-nb_vertices = vertices_init.shape[1]
-face_size = 3
+vertices_optim = None
+texture_optim = None
+vertices_scheduler = None
+texture_scheduler = None
 
-## Set up auxiliary laplacian matrix for the laplacian loss
-vertices_laplacian_matrix = kal.ops.mesh.uniform_laplacian(
-    nb_vertices, faces) 
+def setup_optimizer():
+    global vertices_optim
+    global texture_optim
+    global vertices_scheduler
+    global texture_scheduler
+    vertices_optim  = torch.optim.Adam(params=[vertices, vertice_shift],
+                                    lr=vertice_lr)
+    texture_optim = torch.optim.Adam(params=[texture_map], lr=texture_lr)
+    vertices_scheduler = torch.optim.lr_scheduler.StepLR(
+        vertices_optim,
+        step_size=scheduler_step_size,
+        gamma=scheduler_gamma)
+    texture_scheduler = torch.optim.lr_scheduler.StepLR(
+        texture_optim,
+        step_size=scheduler_step_size,
+        gamma=scheduler_gamma)
 
-vertices_optim  = torch.optim.Adam(params=[vertices, vertice_shift],
-                                   lr=vertice_lr)
-texture_optim = torch.optim.Adam(params=[texture_map], lr=texture_lr)
-vertices_scheduler = torch.optim.lr_scheduler.StepLR(
-    vertices_optim,
-    step_size=scheduler_step_size,
-    gamma=scheduler_gamma)
-texture_scheduler = torch.optim.lr_scheduler.StepLR(
-    texture_optim,
-    step_size=scheduler_step_size,
-    gamma=scheduler_gamma)
+############################################################################################
 
-for epoch in range(num_epoch):
-    for idx, data in enumerate(dataloader):
-        vertices_optim.zero_grad()
-        texture_optim.zero_grad()
-        gt_image = data['rgb'].cuda()
-        gt_mask = data['semantic'].cuda()
-        cam_transform = data['metadata']['cam_transform'].cuda()
-        cam_proj = data['metadata']['cam_proj'].cuda()
+def train():
+    for epoch in range(num_epoch):
+        for idx, data in enumerate(dataloader):
+            vertices_optim.zero_grad()
+            texture_optim.zero_grad()
+            gt_image = data['rgb'].cuda()
+            gt_mask = data['semantic'].cuda()
+            cam_transform = data['metadata']['cam_transform'].cuda()
+            cam_proj = data['metadata']['cam_proj'].cuda()
+            
+            ### Prepare mesh data with projection regarding to camera ###
+            vertices_batch = recenter_vertices(vertices, vertice_shift)
+            # ian: vertices_batch.size() = vertices.size() = [batch, num_verts, 3]
+            # ian: vertice_shift.size() = [3]
+
+
+            print("-----------")
+            print(f"cam_transform.size = {cam_transform.size()}")
+            print(f"cam_proj.size = {cam_proj.size()}")
+
+            face_vertices_camera, face_vertices_image, face_normals = \
+                kal.render.mesh.prepare_vertices(
+                    vertices_batch.repeat(batch_size, 1, 1),
+                    faces, cam_proj, camera_transform=cam_transform
+                )
+            print(f"face_vertices_camera.size = {face_vertices_camera.size()}")
+            print(f"face_vertices_image.size = {face_vertices_image.size()}")
+            print(f"face_normals.size = {face_normals.size()}")
+
+            ### Perform Rasterization ###
+            # Construct attributes that DIB-R rasterizer will interpolate.
+            # the first is the UVS associated to each face
+            # the second will make a hard segmentation mask
+            # ian: torch.ones() makes all pixels inside any triangle get "1" (alpha)
+            # ian: which means all the triangles are opaque
+            face_attributes = [
+                face_uvs.repeat(batch_size, 1, 1, 1),
+                torch.ones((batch_size, nb_faces, 3, 1), device='cuda')
+            ]
+
+            # If you have nvdiffrast installed you can change rast_backend to
+            # nvdiffrast or nvdiffrast_fwd
+            # ian: dibr_rasterization(height, width, faces_z, faces_xy, features, faces_normals)
+            image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
+                gt_image.shape[1], gt_image.shape[2], face_vertices_camera[:, :, :, -1],
+                face_vertices_image, face_attributes, face_normals[:, :, -1],
+                rast_backend='cuda')
+
+            # image_features is a tuple in composed of the interpolated attributes of face_attributes
+            texture_coords, mask = image_features
+            image = kal.render.mesh.texture_mapping(texture_coords,
+                                                    texture_map.repeat(batch_size, 1, 1, 1), 
+                                                    mode='bilinear')
+            image = torch.clamp(image * mask, 0., 1.)
+            
+            ### Compute Losses ###
+            image_loss = torch.mean(torch.abs(image - gt_image))
+            mask_loss = kal.metrics.render.mask_iou(soft_mask,
+                                                    gt_mask.squeeze(-1))
+            # laplacian loss
+            vertices_mov = vertices - vertices_init
+            vertices_mov_laplacian = torch.matmul(vertices_laplacian_matrix, vertices_mov)
+            laplacian_loss = torch.mean(vertices_mov_laplacian ** 2) * nb_vertices * 3
+
+            loss = (
+                image_loss * image_weight +
+                mask_loss * mask_weight +
+                laplacian_loss * laplacian_weight
+            )
+            # print(f"loss.type = {loss.type()}")
+            # print(f"loss = {loss}")
+
+            ### Update the mesh ###
+            loss.backward()
+            vertices_optim.step()
+            texture_optim.step()
+
+        vertices_scheduler.step()
+        texture_scheduler.step()
+        print(f"Epoch {epoch} - loss: {float(loss)}")
         
-        ### Prepare mesh data with projection regarding to camera ###
+        ### Write 3D Checkpoints ###
+        pbr_material = [
+            {'rgb': kal.io.materials.PBRMaterial(diffuse_texture=torch.clamp(texture_map[0], 0., 1.))}
+        ]
+
+        vertices_batch = recenter_vertices(vertices, vertice_shift)
+
+        # We are now adding a new state of the mesh to the timelapse
+        # we only modify the texture and the vertices position
+        timelapse.add_mesh_batch(
+            iteration=epoch,
+            category='optimized_mesh',
+            vertices_list=[vertices_batch[0]],
+            materials_list=pbr_material
+        ) 
+
+############################################################################################
+
+# (helper: get cam transform)
+def get_camera_transform_from_view(elev, azim, r=3.0, look_at_height=0.0):
+    elev = np.deg2rad(elev)
+    azim = np.deg2rad(azim)
+
+    elev = torch.tensor(elev)
+    azim = torch.tensor(azim)
+    r = torch.tensor(r)
+    look_at_height = torch.tensor(look_at_height)
+
+    x = r * torch.sin(elev) * torch.sin(azim)
+    y = r * torch.cos(elev)
+    z = r * torch.sin(elev) * torch.cos(azim)
+
+    pos = torch.tensor([x, y, z]).unsqueeze(0)
+    look_at = torch.zeros_like(pos)
+    look_at[:, 1] = look_at_height
+    direction = torch.tensor([0.0, 1.0, 0.0]).unsqueeze(0)
+
+    pos = pos.float()
+    look_at = look_at.float()
+    direction = direction.float()
+
+    camera_trans = kal.render.camera.generate_transformation_matrix(pos, look_at, direction)
+    return camera_trans
+
+# (helper: get cam projection)
+def get_camera_projection(fovyangle):
+    fovyangle = np.deg2rad(fovyangle)
+
+    fovyangle = torch.tensor(fovyangle)
+
+    camera_proj = kal.render.camera.generate_perspective_projection(fovyangle).to('cuda')
+    return camera_proj
+
+def interactive_render(elev, azim, r, look_at_height, fovyangle):
+    with torch.no_grad():
+        batch_size = 1
+        # This is similar to a training iteration (without the loss part)
+        cam_transform = get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
+        cam_proj = get_camera_projection(fovyangle).unsqueeze(0).cuda()
+
         vertices_batch = recenter_vertices(vertices, vertice_shift)
 
         face_vertices_camera, face_vertices_image, face_normals = \
@@ -126,108 +324,126 @@ for epoch in range(num_epoch):
                 vertices_batch.repeat(batch_size, 1, 1),
                 faces, cam_proj, camera_transform=cam_transform
             )
-
-        ### Perform Rasterization ###
-        # Construct attributes that DIB-R rasterizer will interpolate.
-        # the first is the UVS associated to each face
-        # the second will make a hard segmentation mask
         face_attributes = [
             face_uvs.repeat(batch_size, 1, 1, 1),
-            torch.ones((batch_size, nb_faces, 3, 1), device='cuda')
+            torch.ones((batch_size, nb_faces, 3, 1), device='cuda'),
         ]
 
-        # If you have nvdiffrast installed you can change rast_backend to
-        # nvdiffrast or nvdiffrast_fwd
         image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
-            gt_image.shape[1], gt_image.shape[2], face_vertices_camera[:, :, :, -1],
-            face_vertices_image, face_attributes, face_normals[:, :, -1],
-            rast_backend='cuda')
+            256, 256, face_vertices_camera[:, :, :, -1],
+            face_vertices_image, face_attributes, face_normals[:, :, -1])
 
-        # image_features is a tuple in composed of the interpolated attributes of face_attributes
         texture_coords, mask = image_features
         image = kal.render.mesh.texture_mapping(texture_coords,
                                                 texture_map.repeat(batch_size, 1, 1, 1), 
                                                 mode='bilinear')
         image = torch.clamp(image * mask, 0., 1.)
-        
-        ### Compute Losses ###
-        image_loss = torch.mean(torch.abs(image - gt_image))
-        mask_loss = kal.metrics.render.mask_iou(soft_mask,
-                                                gt_mask.squeeze(-1))
-        # laplacian loss
-        vertices_mov = vertices - vertices_init
-        vertices_mov_laplacian = torch.matmul(vertices_laplacian_matrix, vertices_mov)
-        laplacian_loss = torch.mean(vertices_mov_laplacian ** 2) * nb_vertices * 3
 
-        loss = (
-            image_loss * image_weight +
-            mask_loss * mask_weight +
-            laplacian_loss * laplacian_weight
-        )
-        ### Update the mesh ###
-        loss.backward()
-        vertices_optim.step()
-        texture_optim.step()
+        return image
 
-    vertices_scheduler.step()
-    texture_scheduler.step()
-    print(f"Epoch {epoch} - loss: {float(loss)}")
-    
-    ### Write 3D Checkpoints ###
-    pbr_material = [
-        {'rgb': kal.io.materials.PBRMaterial(diffuse_texture=torch.clamp(texture_map[0], 0., 1.))}
-    ]
+fig = None
+ax = None
+elev_slider = None
+azim_slider = None
+def init_plt():
+    global fig
+    global ax
+    global elev_slider
+    global azim_slider
 
-    vertices_batch = recenter_vertices(vertices, vertice_shift)
-
-    # We are now adding a new state of the mesh to the timelapse
-    # we only modify the texture and the vertices position
-    timelapse.add_mesh_batch(
-        iteration=epoch,
-        category='optimized_mesh',
-        vertices_list=[vertices_batch[0]],
-        materials_list=pbr_material
-    ) 
-
-
-
-with torch.no_grad():
-    # This is similar to a training iteration (without the loss part)
-    data_batch = [train_data[idx] for idx in test_batch_ids]
-    cam_transform = torch.stack([data['metadata']['cam_transform'] for data in data_batch], dim=0).cuda()
-    cam_proj = torch.stack([data['metadata']['cam_proj'] for data in data_batch], dim=0).cuda()
-
-    vertices_batch = recenter_vertices(vertices, vertice_shift)
-
-    face_vertices_camera, face_vertices_image, face_normals = \
-        kal.render.mesh.prepare_vertices(
-            vertices_batch.repeat(test_batch_size, 1, 1),
-            faces, cam_proj, camera_transform=cam_transform
-        )
-    face_attributes = [
-        face_uvs.repeat(test_batch_size, 1, 1, 1),
-        torch.ones((test_batch_size, nb_faces, 3, 1), device='cuda'),
-    ]
-
-    image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
-        256, 256, face_vertices_camera[:, :, :, -1],
-        face_vertices_image, face_attributes, face_normals[:, :, -1])
-
-    texture_coords, mask = image_features
-    image = kal.render.mesh.texture_mapping(texture_coords,
-                                            texture_map.repeat(test_batch_size, 1, 1, 1), 
-                                            mode='bilinear')
-    image = torch.clamp(image * mask, 0., 1.)
-    
     ## Display the rendered images
-    f, axarr = plt.subplots(1, test_batch_size, figsize=(7, 22))
-    f.subplots_adjust(top=0.99, bottom=0.79, left=0., right=1.4)
-    f.suptitle('DIB-R rendering', fontsize=30)
-    for i in range(test_batch_size):
-        axarr[i].imshow(image[i].cpu().detach())
-        
-## Display the texture
-plt.figure(figsize=(10, 10))
-plt.title('2D Texture Map', fontsize=30)
-plt.imshow(torch.clamp(texture_map[0], 0., 1.).cpu().detach().permute(1, 2, 0))
+    fig, ax = plt.subplots()
+    plt.subplots_adjust(bottom=0.35)
+    #f.subplots_adjust(top=0.99, bottom=0.79, left=0., right=1.4)
+    fig.suptitle('DIB-R rendering', fontsize=30)
 
+    # set sliders
+    ax_elev = plt.axes([0.25, 0.2, 0.65, 0.03])
+    elev_slider = Slider(ax_elev, 'elev', 0.0, 360.0, 90.0)
+    elev_slider.on_changed(update_plot)
+
+    ax_azim = plt.axes([0.25, 0.15, 0.65, 0.03])
+    azim_slider = Slider(ax_azim, 'azim', 0.0, 360, 0.0)
+    azim_slider.on_changed(update_plot)
+
+    plt.show()
+
+
+
+
+def update_plot(val):
+    global fig
+    global ax
+    global elev_slider
+    global azim_slider
+
+    new_elev = elev_slider.val
+    new_azim = azim_slider.val
+    print(f"new_elev = {new_elev}")
+    image = interactive_render(elev = new_elev, azim = new_azim, r=3.0, look_at_height=0.0, fovyangle = new_elev)
+    ax.imshow(image[0].cpu().detach())
+    # rand_img = np.random.rand(image.shape[1], image.shape[2])
+    # ax.imshow(rand_img)
+    fig.canvas.draw_idle()
+
+
+def visualize_training():
+    with torch.no_grad():
+        # This is similar to a training iteration (without the loss part)
+        data_batch = [train_data[idx] for idx in test_batch_ids]
+        cam_transform = torch.stack([data['metadata']['cam_transform'] for data in data_batch], dim=0).cuda()
+        cam_proj = torch.stack([data['metadata']['cam_proj'] for data in data_batch], dim=0).cuda()
+
+        vertices_batch = recenter_vertices(vertices, vertice_shift)
+
+        face_vertices_camera, face_vertices_image, face_normals = \
+            kal.render.mesh.prepare_vertices(
+                vertices_batch.repeat(test_batch_size, 1, 1),
+                faces, cam_proj, camera_transform=cam_transform
+            )
+        face_attributes = [
+            face_uvs.repeat(test_batch_size, 1, 1, 1),
+            torch.ones((test_batch_size, nb_faces, 3, 1), device='cuda'),
+        ]
+
+        image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
+            256, 256, face_vertices_camera[:, :, :, -1],
+            face_vertices_image, face_attributes, face_normals[:, :, -1])
+
+        texture_coords, mask = image_features
+        image = kal.render.mesh.texture_mapping(texture_coords,
+                                                texture_map.repeat(test_batch_size, 1, 1, 1), 
+                                                mode='bilinear')
+        image = torch.clamp(image * mask, 0., 1.)
+        
+        ## Display the rendered images
+        f, axarr = plt.subplots(1, test_batch_size, figsize=(7, 22))
+        f.subplots_adjust(top=0.99, bottom=0.79, left=0., right=1.4)
+        f.suptitle('DIB-R rendering', fontsize=30)
+        for i in range(test_batch_size):
+            axarr[i].imshow(image[i].cpu().detach())
+            
+    plt.show()
+    
+    ## Display the texture
+    plt.figure(figsize=(10, 10))
+    plt.title('2D Texture Map', fontsize=30)
+    plt.imshow(torch.clamp(texture_map[0], 0., 1.).cpu().detach().permute(1, 2, 0))
+    plt.show()
+
+
+def main():
+    import sys
+    print(f"sys.path = {sys.path}")
+
+    create_dataloader()
+    prepare_mesh()
+    prepare_loss()
+    setup_optimizer()
+    ##train()
+    # visualize_training()
+    init_plt()
+    ##interactive_render(elev = 90, azim = 0, r=3.0, look_at_height=0.0, fovyangle = 90)
+
+if __name__ == '__main__':
+    main()
