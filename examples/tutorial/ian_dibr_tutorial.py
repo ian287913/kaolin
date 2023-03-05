@@ -3,11 +3,12 @@ import os
 import glob
 import time
 
-from PIL import Image
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider, Button
+from pathlib import Path
+import ian_utils
 
 import kaolin as kal
 
@@ -32,7 +33,16 @@ vertice_lr = 5e-4
 scheduler_step_size = 20
 scheduler_gamma = 0.5
 
-texture_res = 400
+texture_res = 80
+mesh_path = '../samples/sphere.obj'
+
+# renderer parameters
+render_res = 512
+render_elev = 90.0
+render_azim = 0.0
+render_radius = 3.0
+render_look_at_height = 0.0
+render_fovyangle = 60.0
 
 # select camera angle for best visualization
 test_batch_ids = [2, 5, 10]
@@ -74,7 +84,7 @@ def prepare_mesh():
     global face_uvs
     global texture_map
 
-    mesh = kal.io.obj.import_mesh('../samples/sphere.obj', with_materials=True)
+    mesh = kal.io.obj.import_mesh(mesh_path, with_materials=True)
     # the sphere is usually too small (this is fine-tuned for the clock)
     vertices = mesh.vertices.cuda().unsqueeze(0) * 0.75
     vertices.requires_grad = True
@@ -82,14 +92,14 @@ def prepare_mesh():
     faces = mesh.faces.cuda()
     uvs = mesh.uvs.cuda().unsqueeze(0)
     face_uvs_idx = mesh.face_uvs_idx.cuda()
-    print(f"faces.type = {type(faces)}")
-    print(f"faces.shape = {faces.shape}")
-    print(f"uvs.shape = {uvs.shape}")
-    print(f"face_uvs_idx.shape = {face_uvs_idx.shape}")
+    # # print(f"faces.type = {type(faces)}")
+    # # print(f"faces.shape = {faces.shape}")
+    # # print(f"uvs.shape = {uvs.shape}")
+    # # print(f"face_uvs_idx.shape = {face_uvs_idx.shape}")
 
     face_uvs = kal.ops.mesh.index_vertices_by_faces(uvs, face_uvs_idx).detach()
     face_uvs.requires_grad = False
-    print(f"face_uvs.shape = {face_uvs.shape}")
+    ##print(f"face_uvs.shape = {face_uvs.shape}")
 
     # ian: device, dtype, req_grad
     texture_map = torch.ones((1, 3, texture_res, texture_res), dtype=torch.float, device='cuda',
@@ -176,82 +186,86 @@ def setup_optimizer():
 
 ############################################################################################
 
+def train_iter(epoch: int, data):
+    vertices_optim.zero_grad()
+    texture_optim.zero_grad()
+    gt_image = data['rgb'].cuda()
+    gt_mask = data['semantic'].cuda()
+    cam_transform = data['metadata']['cam_transform'].cuda()
+    cam_proj = data['metadata']['cam_proj'].cuda()
+    
+    ### Prepare mesh data with projection regarding to camera ###
+    vertices_batch = recenter_vertices(vertices, vertice_shift)
+    # ian: vertices_batch.size() = vertices.size() = [batch, num_verts, 3]
+    # ian: vertice_shift.size() = [3]
+
+    # print("-----------")
+    # print(f"cam_transform.size = {cam_transform.size()}")
+    # print(f"cam_proj.size = {cam_proj.size()}")
+
+    face_vertices_camera, face_vertices_image, face_normals = \
+        kal.render.mesh.prepare_vertices(
+            vertices_batch.repeat(batch_size, 1, 1),
+            faces, cam_proj, camera_transform=cam_transform
+        )
+    # print(f"face_vertices_camera.size = {face_vertices_camera.size()}")
+    # print(f"face_vertices_image.size = {face_vertices_image.size()}")
+    # print(f"face_normals.size = {face_normals.size()}")
+
+    ### Perform Rasterization ###
+    # Construct attributes that DIB-R rasterizer will interpolate.
+    # the first is the UVS associated to each face
+    # the second will make a hard segmentation mask
+    # ian: torch.ones() makes all pixels inside any triangle get "1" (alpha)
+    # ian: which means all the triangles are opaque
+    face_attributes = [
+        face_uvs.repeat(batch_size, 1, 1, 1),
+        torch.ones((batch_size, nb_faces, 3, 1), device='cuda')
+    ]
+
+    # If you have nvdiffrast installed you can change rast_backend to
+    # nvdiffrast or nvdiffrast_fwd
+    # ian: dibr_rasterization(height, width, faces_z, faces_xy, features, faces_normals)
+    image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
+        gt_image.shape[1], gt_image.shape[2], face_vertices_camera[:, :, :, -1],
+        face_vertices_image, face_attributes, face_normals[:, :, -1],
+        rast_backend='cuda')
+
+    # image_features is a tuple in composed of the interpolated attributes of face_attributes
+    texture_coords, mask = image_features
+    image = kal.render.mesh.texture_mapping(texture_coords,
+                                            texture_map.repeat(batch_size, 1, 1, 1), 
+                                            mode='bilinear')
+    image = torch.clamp(image * mask, 0., 1.)
+    
+    ### Compute Losses ###
+    image_loss = torch.mean(torch.abs(image - gt_image))
+    mask_loss = kal.metrics.render.mask_iou(soft_mask,
+                                            gt_mask.squeeze(-1))
+    # laplacian loss
+    vertices_mov = vertices - vertices_init
+    vertices_mov_laplacian = torch.matmul(vertices_laplacian_matrix, vertices_mov)
+    laplacian_loss = torch.mean(vertices_mov_laplacian ** 2) * nb_vertices * 3
+
+    loss = (
+        image_loss * image_weight +
+        mask_loss * mask_weight +
+        laplacian_loss * laplacian_weight
+    )
+    # print(f"loss.type = {loss.type()}")
+    # print(f"loss = {loss}")
+
+    ### Update the mesh ###
+    loss.backward()
+    vertices_optim.step()
+    texture_optim.step()
+
+    return loss
+
 def train():
     for epoch in range(num_epoch):
         for idx, data in enumerate(dataloader):
-            vertices_optim.zero_grad()
-            texture_optim.zero_grad()
-            gt_image = data['rgb'].cuda()
-            gt_mask = data['semantic'].cuda()
-            cam_transform = data['metadata']['cam_transform'].cuda()
-            cam_proj = data['metadata']['cam_proj'].cuda()
-            
-            ### Prepare mesh data with projection regarding to camera ###
-            vertices_batch = recenter_vertices(vertices, vertice_shift)
-            # ian: vertices_batch.size() = vertices.size() = [batch, num_verts, 3]
-            # ian: vertice_shift.size() = [3]
-
-
-            print("-----------")
-            print(f"cam_transform.size = {cam_transform.size()}")
-            print(f"cam_proj.size = {cam_proj.size()}")
-
-            face_vertices_camera, face_vertices_image, face_normals = \
-                kal.render.mesh.prepare_vertices(
-                    vertices_batch.repeat(batch_size, 1, 1),
-                    faces, cam_proj, camera_transform=cam_transform
-                )
-            print(f"face_vertices_camera.size = {face_vertices_camera.size()}")
-            print(f"face_vertices_image.size = {face_vertices_image.size()}")
-            print(f"face_normals.size = {face_normals.size()}")
-
-            ### Perform Rasterization ###
-            # Construct attributes that DIB-R rasterizer will interpolate.
-            # the first is the UVS associated to each face
-            # the second will make a hard segmentation mask
-            # ian: torch.ones() makes all pixels inside any triangle get "1" (alpha)
-            # ian: which means all the triangles are opaque
-            face_attributes = [
-                face_uvs.repeat(batch_size, 1, 1, 1),
-                torch.ones((batch_size, nb_faces, 3, 1), device='cuda')
-            ]
-
-            # If you have nvdiffrast installed you can change rast_backend to
-            # nvdiffrast or nvdiffrast_fwd
-            # ian: dibr_rasterization(height, width, faces_z, faces_xy, features, faces_normals)
-            image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
-                gt_image.shape[1], gt_image.shape[2], face_vertices_camera[:, :, :, -1],
-                face_vertices_image, face_attributes, face_normals[:, :, -1],
-                rast_backend='cuda')
-
-            # image_features is a tuple in composed of the interpolated attributes of face_attributes
-            texture_coords, mask = image_features
-            image = kal.render.mesh.texture_mapping(texture_coords,
-                                                    texture_map.repeat(batch_size, 1, 1, 1), 
-                                                    mode='bilinear')
-            image = torch.clamp(image * mask, 0., 1.)
-            
-            ### Compute Losses ###
-            image_loss = torch.mean(torch.abs(image - gt_image))
-            mask_loss = kal.metrics.render.mask_iou(soft_mask,
-                                                    gt_mask.squeeze(-1))
-            # laplacian loss
-            vertices_mov = vertices - vertices_init
-            vertices_mov_laplacian = torch.matmul(vertices_laplacian_matrix, vertices_mov)
-            laplacian_loss = torch.mean(vertices_mov_laplacian ** 2) * nb_vertices * 3
-
-            loss = (
-                image_loss * image_weight +
-                mask_loss * mask_weight +
-                laplacian_loss * laplacian_weight
-            )
-            # print(f"loss.type = {loss.type()}")
-            # print(f"loss = {loss}")
-
-            ### Update the mesh ###
-            loss.backward()
-            vertices_optim.step()
-            texture_optim.step()
+            loss = train_iter(epoch, data)
 
         vertices_scheduler.step()
         texture_scheduler.step()
@@ -290,15 +304,16 @@ def get_camera_transform_from_view(elev, azim, r=3.0, look_at_height=0.0):
     z = r * torch.sin(elev) * torch.cos(azim)
 
     pos = torch.tensor([x, y, z]).unsqueeze(0)
+
     look_at = torch.zeros_like(pos)
     look_at[:, 1] = look_at_height
-    direction = torch.tensor([0.0, 1.0, 0.0]).unsqueeze(0)
+    up_direction = torch.tensor([0.0, 1.0, 0.0]).unsqueeze(0)
 
     pos = pos.float()
     look_at = look_at.float()
-    direction = direction.float()
+    up_direction = up_direction.float()
 
-    camera_trans = kal.render.camera.generate_transformation_matrix(pos, look_at, direction)
+    camera_trans = kal.render.camera.generate_transformation_matrix(pos, look_at, up_direction)
     return camera_trans
 
 # (helper: get cam projection)
@@ -310,10 +325,11 @@ def get_camera_projection(fovyangle):
     camera_proj = kal.render.camera.generate_perspective_projection(fovyangle).to('cuda')
     return camera_proj
 
-def interactive_render(elev, azim, r, look_at_height, fovyangle):
+
+
+def render_with_camera_params(elev, azim, r, look_at_height, fovyangle):
     with torch.no_grad():
         batch_size = 1
-        # This is similar to a training iteration (without the loss part)
         cam_transform = get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
         cam_proj = get_camera_projection(fovyangle).unsqueeze(0).cuda()
 
@@ -330,7 +346,7 @@ def interactive_render(elev, azim, r, look_at_height, fovyangle):
         ]
 
         image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
-            256, 256, face_vertices_camera[:, :, :, -1],
+            render_res, render_res, face_vertices_camera[:, :, :, -1],
             face_vertices_image, face_attributes, face_normals[:, :, -1])
 
         texture_coords, mask = image_features
@@ -341,15 +357,18 @@ def interactive_render(elev, azim, r, look_at_height, fovyangle):
 
         return image
 
+# setup uis
 fig = None
 ax = None
 elev_slider = None
 azim_slider = None
+radius_slider = None
 def init_plt():
     global fig
     global ax
     global elev_slider
     global azim_slider
+    global radius_slider
 
     ## Display the rendered images
     fig, ax = plt.subplots()
@@ -358,32 +377,69 @@ def init_plt():
     fig.suptitle('DIB-R rendering', fontsize=30)
 
     # set sliders
-    ax_elev = plt.axes([0.25, 0.2, 0.65, 0.03])
-    elev_slider = Slider(ax_elev, 'elev', 0.0, 360.0, 90.0)
-    elev_slider.on_changed(update_plot)
+    ax_elev = plt.axes([0.25, 0.3, 0.65, 0.03])
+    elev_slider = Slider(ax_elev, 'elev', 0.0, 360.0, render_elev)
+    elev_slider.on_changed(re_render_with_ui_params)
 
-    ax_azim = plt.axes([0.25, 0.15, 0.65, 0.03])
-    azim_slider = Slider(ax_azim, 'azim', 0.0, 360, 0.0)
-    azim_slider.on_changed(update_plot)
+    ax_azim = plt.axes([0.25, 0.25, 0.65, 0.03])
+    azim_slider = Slider(ax_azim, 'azim', 0.0, 360, render_azim)
+    azim_slider.on_changed(re_render_with_ui_params)
+
+    ax_radius = plt.axes([0.25, 0.2, 0.65, 0.03])
+    radius_slider = Slider(ax_radius, 'radius', 0.0, 20, render_radius)
+    radius_slider.on_changed(re_render_with_ui_params)
+
+    ax_saveimg = plt.axes([0.25, 0.05, 0.65, 0.06])
+    saveimg_button = Button(ax_saveimg, 'save img')
+    saveimg_button.on_clicked(saveimg_button_clicked)
 
     plt.show()
 
+def saveimg_button_clicked(val):
+    print(f"rendered_image.size() = {rendered_image.size()}")
+    print(f"rendered_image.type() = {rendered_image.type()}")
+    ian_utils.save_image(rendered_image, ian_utils.output_path, 'rendered_image')
+    print(f"texture_map.size() = {texture_map.size()}")
+    print(f"texture_map.type() = {texture_map.type()}")
+    
+    torch.set_printoptions(profile="full")
+    print(f"texture_map: {texture_map}")
+    clamped_texture_map = torch.clamp(texture_map, 0., 1.)
+    print(f"\n\n\n\n\n\n\nclamped_texture_map: {clamped_texture_map}")
 
+    ian_utils.save_image(torch.clamp(texture_map, 0., 1.).permute(0, 2, 3, 1), ian_utils.output_path, 'texture')
+    
+    print(f"saveimg_button_clicked")
 
-
-def update_plot(val):
+# called when the ui is updated
+rendered_image = None
+def re_render_with_ui_params(val):
     global fig
     global ax
     global elev_slider
     global azim_slider
+    global radius_slider
+    global rendered_image
 
+    # fetch ui value
     new_elev = elev_slider.val
     new_azim = azim_slider.val
-    print(f"new_elev = {new_elev}")
-    image = interactive_render(elev = new_elev, azim = new_azim, r=3.0, look_at_height=0.0, fovyangle = new_elev)
-    ax.imshow(image[0].cpu().detach())
-    # rand_img = np.random.rand(image.shape[1], image.shape[2])
-    # ax.imshow(rand_img)
+    new_radius = radius_slider.val
+    new_look_at_height = render_look_at_height
+    new_fovyangle = render_fovyangle
+    print(f"elev = {new_elev}, new_azim = {new_azim}, new_radius = {new_radius}, new_look_at_height = {new_look_at_height}, new_fovyangle = {new_fovyangle}")
+
+    # render
+    rendered_image = render_with_camera_params(
+        elev = new_elev, 
+        azim = new_azim, 
+        r = new_radius, 
+        look_at_height = new_look_at_height, 
+        fovyangle = new_fovyangle)
+    
+    # update ui image
+    ###ax.imshow(rendered_image[0].cpu().detach())
+    ax.imshow(ian_utils.tensor2numpy(torch.clamp(texture_map, 0., 1.).permute(0,2,3,1))[0])
     fig.canvas.draw_idle()
 
 
@@ -431,19 +487,26 @@ def visualize_training():
     plt.imshow(torch.clamp(texture_map[0], 0., 1.).cpu().detach().permute(1, 2, 0))
     plt.show()
 
+############################ UTILITY ############################
+
+
+
+############################################################################################
 
 def main():
     import sys
     print(f"sys.path = {sys.path}")
 
+    ian_utils.init_path()
     create_dataloader()
     prepare_mesh()
     prepare_loss()
     setup_optimizer()
-    ##train()
+    train()
     # visualize_training()
     init_plt()
     ##interactive_render(elev = 90, azim = 0, r=3.0, look_at_height=0.0, fovyangle = 90)
 
 if __name__ == '__main__':
     main()
+
