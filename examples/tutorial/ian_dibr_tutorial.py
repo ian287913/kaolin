@@ -24,7 +24,7 @@ timelapse = kal.visualize.Timelapse(logs_path)
 ############################################################################################
 
 # Hyperparameters
-num_epoch = 20
+num_epoch = 100
 batch_size = 2
 laplacian_weight = 0.03
 image_weight = 0.1
@@ -34,7 +34,7 @@ vertice_lr = 5e-4
 scheduler_step_size = 20
 scheduler_gamma = 0.5
 
-texture_res = 128
+texture_res = 512
 
 ##mesh_path = '../samples/sphere.obj'
 mesh_path = './resources/goldfish/example_output_goldfish.obj'
@@ -444,27 +444,26 @@ def init_plt():
     radius_slider = Slider(ax_radius, 'radius', 0.0, 20, render_radius)
     radius_slider.on_changed(re_render_with_ui_params)
 
+    ax_render = plt.axes([0.25, 0.12, 0.65, 0.06])
+    render_button = Button(ax_render, 'render')
+    render_button.on_clicked(render_button_clicked)
+
     ax_saveimg = plt.axes([0.25, 0.05, 0.65, 0.06])
     saveimg_button = Button(ax_saveimg, 'save img')
     saveimg_button.on_clicked(saveimg_button_clicked)
 
     plt.show()
 
-def saveimg_button_clicked(val):
-    print(f"rendered_image.size() = {rendered_image.size()}")
-    print(f"rendered_image.type() = {rendered_image.type()}")
-    ian_utils.save_image(rendered_image, ian_utils.output_path, 'rendered_image')
-    print(f"texture_map.size() = {texture_map.size()}")
-    print(f"texture_map.type() = {texture_map.type()}")
-    
-    torch.set_printoptions(profile="full")
-    print(f"texture_map: {texture_map}")
-    clamped_texture_map = torch.clamp(texture_map, 0., 1.)
-    print(f"\n\n\n\n\n\n\nclamped_texture_map: {clamped_texture_map}")
+def render_button_clicked(val):
+    re_render_with_ui_params(None)
 
+def saveimg_button_clicked(val):
+    # torch.set_printoptions(profile="full")
+    # print(f"texture_map: {texture_map}")
+    ian_utils.save_image(rendered_image, ian_utils.output_path, 'rendered_image')
     ian_utils.save_image(torch.clamp(texture_map, 0., 1.).permute(0, 2, 3, 1), ian_utils.output_path, 'texture')
     
-    print(f"saveimg_button_clicked")
+    print(f"rendered_image and texture_map saved.")
 
 # called when the ui is updated
 rendered_image = None
@@ -567,7 +566,7 @@ def main():
     ##train()
     train_with_single_view()
     
-    # visualize_training()
+    ## visualize_training()
     init_plt()
 
 if __name__ == '__main__':
