@@ -6,15 +6,15 @@ import time
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Slider, Button, TextBox
 from pathlib import Path
 import ian_utils
 
 import kaolin as kal
 
 # path to the rendered image (using the data synthesizer)
-rendered_path = "../samples/rendered_clock/"
-rendered_path_single = "../samples/rendered_clock_fake/"
+rendered_path = "./samples/rendered_clock/"
+rendered_path_single = "./resources/rendered_clock_fake/"
 # path to the output logs (readable with the training visualizer in the omniverse app)
 logs_path = './logs/'
 
@@ -35,13 +35,15 @@ scheduler_step_size = 20
 scheduler_gamma = 0.5
 
 texture_res = 128
-mesh_path = '../samples/sphere.obj'
+
+##mesh_path = '../samples/sphere.obj'
+mesh_path = './resources/goldfish/example_output_goldfish.obj'
 
 # renderer parameters
 render_res = 512
 render_elev = 90.0
 render_azim = 0.0
-render_radius = 2.5
+render_radius = 18.0
 render_look_at_height = 0.0
 render_fovyangle = 60.0
 
@@ -286,18 +288,45 @@ def train_iter_with_single_view(epoch: int, data):
     gt_image = data['rgb'].cuda()
 
     # TODO: pre-calculate these matrix when loading data
-    cam_transform = get_camera_transform_from_view(
+    cam_proj = ian_utils.get_camera_projection(
+        data['metadata']['cam_fovyangle']
+    ).cuda()
+    cam_transform = ian_utils.get_camera_transform_from_view(
         data['metadata']['cam_elev'],
         data['metadata']['cam_azim'],
         data['metadata']['cam_radius'],
         data['metadata']['cam_look_at_height'],
     ).cuda()
-    cam_proj = get_camera_projection(
-        data['metadata']['cam_fovyangle']
-    ).cuda()
     
+    # render image and mask
+    image, mask, soft_mask = render_image_and_mask(cam_proj, cam_transform, gt_image.shape[1], gt_image.shape[2])
+    
+    ### Compute Losses ###
+    image_loss = torch.mean(torch.abs(image - gt_image))
+
+    loss = (
+        image_loss * image_weight
+    )
+
+    ### Update the mesh ###
+    loss.backward()
+    texture_optim.step()
+
+    return loss
+
+
+def render_image_and_mask_with_camera_params(elev, azim, r, look_at_height, fovyangle):
+        cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
+        cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
+         # render image and mask
+        image, mask, soft_mask = render_image_and_mask(cam_proj, cam_transform, render_res, render_res)
+        return image
+
+def render_image_and_mask(cam_proj, cam_transform, height, width):
     ### Prepare mesh data with projection regarding to camera ###
     vertices_batch = recenter_vertices(vertices, vertice_shift)
+    # ian: vertices_batch.size() = vertices.size() = [batch, num_verts, 3]
+    # ian: vertice_shift.size() = [3]
 
     face_vertices_camera, face_vertices_image, face_normals = \
         kal.render.mesh.prepare_vertices(
@@ -318,7 +347,7 @@ def train_iter_with_single_view(epoch: int, data):
 
     # ian: dibr_rasterization(height, width, faces_z, faces_xy, features, faces_normals)
     image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
-        gt_image.shape[1], gt_image.shape[2], face_vertices_camera[:, :, :, -1],
+        height, width, face_vertices_camera[:, :, :, -1],
         face_vertices_image, face_attributes, face_normals[:, :, -1],
         rast_backend='cuda')
 
@@ -328,19 +357,9 @@ def train_iter_with_single_view(epoch: int, data):
                                             texture_map.repeat(batch_size, 1, 1, 1), 
                                             mode='bilinear')
     image = torch.clamp(image * mask, 0., 1.)
-    
-    ### Compute Losses ###
-    image_loss = torch.mean(torch.abs(image - gt_image))
 
-    loss = (
-        image_loss * image_weight
-    )
+    return (image, mask, soft_mask)
 
-    ### Update the mesh ###
-    loss.backward()
-    texture_optim.step()
-
-    return loss
 
 def train():
     for epoch in range(num_epoch):
@@ -392,78 +411,6 @@ def train_with_single_view():
         ) 
 
 ############################################################################################
-
-# (helper: get cam transform)
-def get_camera_transform_from_view(elev, azim, r=3.0, look_at_height=0.0):
-    elev = np.deg2rad(elev)
-    azim = np.deg2rad(azim)
-
-    if (not torch.is_tensor(elev)):
-        elev = torch.tensor(elev)
-    if (not torch.is_tensor(azim)):
-        azim = torch.tensor(azim)
-    if (not torch.is_tensor(r)):
-        r = torch.tensor(r)
-    if (not torch.is_tensor(look_at_height)):
-        look_at_height = torch.tensor(look_at_height)
-
-    x = r * torch.sin(elev) * torch.sin(azim)
-    y = r * torch.cos(elev)
-    z = r * torch.sin(elev) * torch.cos(azim)
-
-    pos = torch.tensor([x, y, z]).unsqueeze(0)
-
-    look_at = torch.zeros_like(pos)
-    look_at[:, 1] = look_at_height
-    up_direction = torch.tensor([0.0, 1.0, 0.0]).unsqueeze(0)
-
-    pos = pos.float()
-    look_at = look_at.float()
-    up_direction = up_direction.float()
-
-    camera_trans = kal.render.camera.generate_transformation_matrix(pos, look_at, up_direction)
-    return camera_trans
-
-# (helper: get cam projection)
-def get_camera_projection(fovyangle):
-    fovyangle = np.deg2rad(fovyangle)
-
-    fovyangle = torch.tensor(fovyangle)
-
-    camera_proj = kal.render.camera.generate_perspective_projection(fovyangle).to('cuda')
-    return camera_proj
-
-
-
-def render_with_camera_params(elev, azim, r, look_at_height, fovyangle):
-    with torch.no_grad():
-        batch_size = 1
-        cam_transform = get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
-        cam_proj = get_camera_projection(fovyangle).unsqueeze(0).cuda()
-
-        vertices_batch = recenter_vertices(vertices, vertice_shift)
-
-        face_vertices_camera, face_vertices_image, face_normals = \
-            kal.render.mesh.prepare_vertices(
-                vertices_batch.repeat(batch_size, 1, 1),
-                faces, cam_proj, camera_transform=cam_transform
-            )
-        face_attributes = [
-            face_uvs.repeat(batch_size, 1, 1, 1),
-            torch.ones((batch_size, nb_faces, 3, 1), device='cuda'),
-        ]
-
-        image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
-            render_res, render_res, face_vertices_camera[:, :, :, -1],
-            face_vertices_image, face_attributes, face_normals[:, :, -1])
-
-        texture_coords, mask = image_features
-        image = kal.render.mesh.texture_mapping(texture_coords,
-                                                texture_map.repeat(batch_size, 1, 1, 1), 
-                                                mode='bilinear')
-        image = torch.clamp(image * mask, 0., 1.)
-
-        return image
 
 # setup uis
 fig = None
@@ -538,13 +485,14 @@ def re_render_with_ui_params(val):
     print(f"elev = {new_elev}, new_azim = {new_azim}, new_radius = {new_radius}, new_look_at_height = {new_look_at_height}, new_fovyangle = {new_fovyangle}")
 
     # render
-    rendered_image = render_with_camera_params(
-        elev = new_elev, 
-        azim = new_azim, 
-        r = new_radius, 
-        look_at_height = new_look_at_height, 
-        fovyangle = new_fovyangle)
-    
+    with torch.no_grad():
+        rendered_image = render_image_and_mask_with_camera_params(
+            elev = new_elev, 
+            azim = new_azim, 
+            r = new_radius, 
+            look_at_height = new_look_at_height, 
+            fovyangle = new_fovyangle)
+        
     # update ui image
     ax.imshow(rendered_image[0].cpu().detach())
     ##ax.imshow(ian_utils.tensor2numpy(torch.clamp(texture_map, 0., 1.).permute(0,2,3,1))[0])
@@ -597,7 +545,9 @@ def visualize_training():
 
 ############################ UTILITY ############################
 
-
+# def export_all_rendered_metadata():
+#     for idx, data in enumerate(dataloader):
+#         train_iter_with_single_view(epoch, data)
 
 ############################################################################################
 
