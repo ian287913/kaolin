@@ -30,7 +30,8 @@ laplacian_weight = 0.03
 image_weight = 0.1
 mask_weight = 1.
 texture_lr = 5e-2
-vertice_lr = 5e-4
+vertice_lr = 5e-2
+# vertice_lr = 5e-4
 scheduler_step_size = 20
 scheduler_gamma = 0.5
 
@@ -46,6 +47,9 @@ render_azim = 0.0
 render_radius = 18.0
 render_look_at_height = 0.0
 render_fovyangle = 60.0
+
+render_sigmainv = 7000.0
+
 
 # select camera angle for best visualization
 test_batch_ids = [2, 5, 10]
@@ -193,22 +197,44 @@ def setup_optimizer():
 
 ############################################################################################
 
-def train_iter(epoch: int, data):
-    vertices_optim.zero_grad()
+def train_iter_old_data(epoch: int, data):
+    return train_iter(epoch, 
+                      True,
+                      data['rgb'].cuda(),
+                      data['semantic'].cuda(),
+                      data['metadata']['cam_transform'].cuda(),
+                      data['metadata']['cam_proj'].cuda())
+
+def train_iter_new_data(epoch: int, train_vertices: bool, data):
+
+    # TODO: pre-calculate these matrix when loading data
+    cam_proj = ian_utils.get_camera_projection(
+        data['metadata']['cam_fovyangle']
+    ).cuda()
+    cam_transform = ian_utils.get_camera_transform_from_view(
+        data['metadata']['cam_elev'],
+        data['metadata']['cam_azim'],
+        data['metadata']['cam_radius'],
+        data['metadata']['cam_look_at_height'],
+    ).cuda()
+    
+    return train_iter(epoch,
+                      train_vertices,
+                      data['rgb'].cuda(),
+                      data['alpha'].cuda(),
+                      cam_transform,
+                      cam_proj)
+
+def train_iter(epoch: int, train_vertices: bool, gt_image, gt_mask, cam_transform, cam_proj):
+    # reset gradient
     texture_optim.zero_grad()
-    gt_image = data['rgb'].cuda()
-    gt_mask = data['semantic'].cuda()
-    cam_transform = data['metadata']['cam_transform'].cuda()
-    cam_proj = data['metadata']['cam_proj'].cuda()
+    if (train_vertices):
+        vertices_optim.zero_grad()
     
     ### Prepare mesh data with projection regarding to camera ###
     vertices_batch = ian_utils.recenter_vertices(vertices, vertice_shift)
     # ian: vertices_batch.size() = vertices.size() = [batch, num_verts, 3]
     # ian: vertice_shift.size() = [3]
-
-    # print("-----------")
-    # print(f"cam_transform.size = {cam_transform.size()}")
-    # print(f"cam_proj.size = {cam_proj.size()}")
 
     face_vertices_camera, face_vertices_image, face_normals = \
         kal.render.mesh.prepare_vertices(
@@ -247,25 +273,34 @@ def train_iter(epoch: int, data):
     
     ### Compute Losses ###
     image_loss = torch.mean(torch.abs(image - gt_image))
-    mask_loss = kal.metrics.render.mask_iou(soft_mask,
-                                            gt_mask.squeeze(-1))
-    # laplacian loss
-    vertices_mov = vertices - vertices_init
-    vertices_mov_laplacian = torch.matmul(vertices_laplacian_matrix, vertices_mov)
-    laplacian_loss = torch.mean(vertices_mov_laplacian ** 2) * nb_vertices * 3
+    if (train_vertices):
+        batched_gt_mask =  gt_mask.repeat(batch_size, 1, 1)
 
-    loss = (
-        image_loss * image_weight +
-        mask_loss * mask_weight +
-        laplacian_loss * laplacian_weight
-    )
-    # print(f"loss.type = {loss.type()}")
-    # print(f"loss = {loss}")
+        mask_loss = kal.metrics.render.mask_iou(soft_mask, 
+                                                batched_gt_mask)
+        # laplacian loss
+        vertices_mov = vertices - vertices_init
+        vertices_mov_laplacian = torch.matmul(vertices_laplacian_matrix, vertices_mov)
+        laplacian_loss = torch.mean(vertices_mov_laplacian ** 2) * nb_vertices * 3
+
+    if (train_vertices):
+        loss = (
+            mask_loss * mask_weight +
+            laplacian_loss * laplacian_weight
+        )
+        # loss = (
+        #     image_loss * image_weight +
+        #     mask_loss * mask_weight +
+        #     laplacian_loss * laplacian_weight
+        # )
+    else:
+        loss = (image_loss * image_weight)
 
     ### Update the mesh ###
     loss.backward()
-    vertices_optim.step()
     texture_optim.step()
+    if (train_vertices):
+        vertices_optim.step()
 
     return loss
 
@@ -302,14 +337,14 @@ def train_iter_with_single_view(epoch: int, data):
     return loss
 
 
-def render_image_and_mask_with_camera_params(elev, azim, r, look_at_height, fovyangle):
+def render_image_and_mask_with_camera_params(elev, azim, r, look_at_height, fovyangle, sigmainv = 7000):
         cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
         cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
          # render image and mask
-        image, mask, soft_mask = render_image_and_mask(cam_proj, cam_transform, render_res, render_res)
-        return image
+        image, mask, soft_mask = render_image_and_mask(cam_proj, cam_transform, render_res, render_res, sigmainv)
+        return image, mask, soft_mask
 
-def render_image_and_mask(cam_proj, cam_transform, height, width):
+def render_image_and_mask(cam_proj, cam_transform, height, width, sigmainv = 7000):
     ### Prepare mesh data with projection regarding to camera ###
     vertices_batch = ian_utils.recenter_vertices(vertices, vertice_shift)
     # ian: vertices_batch.size() = vertices.size() = [batch, num_verts, 3]
@@ -336,7 +371,8 @@ def render_image_and_mask(cam_proj, cam_transform, height, width):
     image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
         height, width, face_vertices_camera[:, :, :, -1],
         face_vertices_image, face_attributes, face_normals[:, :, -1],
-        rast_backend='cuda')
+        rast_backend='cuda',
+        sigmainv=sigmainv)
 
     # image_features is a tuple in composed of the interpolated attributes of face_attributes
     texture_coords, mask = image_features
@@ -351,7 +387,7 @@ def render_image_and_mask(cam_proj, cam_transform, height, width):
 def train():
     for epoch in range(num_epoch):
         for idx, data in enumerate(dataloader):
-            loss = train_iter(epoch, data)
+            loss = train_iter_old_data(epoch, data)
 
         vertices_scheduler.step()
         texture_scheduler.step()
@@ -373,12 +409,15 @@ def train():
             materials_list=pbr_material
         ) 
 
-def train_with_single_view():
+def train_with_single_view(train_vertices : bool):
     for epoch in range(num_epoch):
         for idx, data in enumerate(dataloader):
-            loss = train_iter_with_single_view(epoch, data)
+            loss = train_iter_new_data(epoch, train_vertices, data)
 
+        # step scheduler
         texture_scheduler.step()
+        if (train_vertices):
+            vertices_scheduler.step()
         print(f"Epoch {epoch} - loss: {float(loss)}")
         
         ### Write 3D Checkpoints ###
@@ -405,37 +444,43 @@ ax = None
 elev_slider = None
 azim_slider = None
 radius_slider = None
+sigmainv_slider = None
 def init_plt():
     global fig
     global ax
     global elev_slider
     global azim_slider
     global radius_slider
+    global sigmainv_slider
 
     ## Display the rendered images
     fig, ax = plt.subplots()
-    plt.subplots_adjust(bottom=0.35)
+    plt.subplots_adjust(bottom=0.4)
     #f.subplots_adjust(top=0.99, bottom=0.79, left=0., right=1.4)
     fig.suptitle('DIB-R rendering', fontsize=30)
 
     # set sliders
-    ax_elev = plt.axes([0.25, 0.3, 0.65, 0.03])
+    ax_elev = plt.axes([0.25, 0.35, 0.65, 0.03])
     elev_slider = Slider(ax_elev, 'elev', 0.0, 360.0, render_elev)
     elev_slider.on_changed(re_render_with_ui_params)
 
-    ax_azim = plt.axes([0.25, 0.25, 0.65, 0.03])
+    ax_azim = plt.axes([0.25, 0.3, 0.65, 0.03])
     azim_slider = Slider(ax_azim, 'azim', 0.0, 360, render_azim)
     azim_slider.on_changed(re_render_with_ui_params)
 
-    ax_radius = plt.axes([0.25, 0.2, 0.65, 0.03])
+    ax_radius = plt.axes([0.25, 0.25, 0.65, 0.03])
     radius_slider = Slider(ax_radius, 'radius', 0.0, 20, render_radius)
     radius_slider.on_changed(re_render_with_ui_params)
+    
+    ax_sigmainv = plt.axes([0.25, 0.2, 0.65, 0.03])
+    sigmainv_slider = Slider(ax_sigmainv, 'sigmainv', 3000.0, 30000.0, render_sigmainv)
+    sigmainv_slider.on_changed(re_render_with_ui_params)
 
-    ax_render = plt.axes([0.25, 0.12, 0.65, 0.06])
+    ax_render = plt.axes([0.25, 0.1, 0.65, 0.06])
     render_button = Button(ax_render, 'render')
     render_button.on_clicked(render_button_clicked)
 
-    ax_saveimg = plt.axes([0.25, 0.05, 0.65, 0.06])
+    ax_saveimg = plt.axes([0.25, 0.02, 0.65, 0.06])
     saveimg_button = Button(ax_saveimg, 'save img')
     saveimg_button.on_clicked(saveimg_button_clicked)
 
@@ -460,27 +505,33 @@ def re_render_with_ui_params(val):
     global elev_slider
     global azim_slider
     global radius_slider
+    global sigmainv_slider
     global rendered_image
 
     # fetch ui value
     new_elev = elev_slider.val
     new_azim = azim_slider.val
     new_radius = radius_slider.val
+    new_sigmainv = sigmainv_slider.val
     new_look_at_height = render_look_at_height
     new_fovyangle = render_fovyangle
-    print(f"elev = {new_elev}, new_azim = {new_azim}, new_radius = {new_radius}, new_look_at_height = {new_look_at_height}, new_fovyangle = {new_fovyangle}")
+    print(f"elev = {new_elev}, new_azim = {new_azim}, new_radius = {new_radius}, new_look_at_height = {new_look_at_height}, new_fovyangle = {new_fovyangle}, new_sigmainv = {new_sigmainv}")
 
     # render
     with torch.no_grad():
-        rendered_image = render_image_and_mask_with_camera_params(
+        rendered_image, mask, soft_mask = render_image_and_mask_with_camera_params(
             elev = new_elev, 
             azim = new_azim, 
             r = new_radius, 
             look_at_height = new_look_at_height, 
-            fovyangle = new_fovyangle)
+            fovyangle = new_fovyangle,
+            sigmainv = new_sigmainv)
         
     # update ui image
-    ax.imshow(rendered_image[0].cpu().detach())
+    print(f"soft_mask.size() = {soft_mask.size()}")
+    print(f"soft_mask = {soft_mask}")
+    ax.imshow(soft_mask[0].repeat(3, 1, 1).permute(1,2,0).cpu().detach())
+    ##ax.imshow(rendered_image[0].cpu().detach())
     ##ax.imshow(ian_utils.tensor2numpy(torch.clamp(texture_map, 0., 1.).permute(0,2,3,1))[0])
     fig.canvas.draw_idle()
 
@@ -551,7 +602,7 @@ def main():
     setup_optimizer()
 
     ##train()
-    train_with_single_view()
+    train_with_single_view(True)
     
     ## visualize_training()
     init_plt()
