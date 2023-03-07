@@ -83,9 +83,6 @@ def create_dataloader_with_single_view():
     for i in range(num_views):
         data = ian_utils.load_rendered_png_and_camera_data(rendered_path_single, i)
         train_data.append(data)
-    print(f"type(train_data) = {type(train_data)}")
-    print(f"type(train_data[0]) = {type(train_data[0])}")
-    print(f"train_data[0] = {train_data[0]}")
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size,
                                             shuffle=True, pin_memory=True) 
 
@@ -170,16 +167,6 @@ def prepare_loss():
         nb_vertices, faces) 
 
 
-
-# (helper, not in main)
-def recenter_vertices(vertices, vertice_shift):
-    """Recenter vertices on vertice_shift for better optimization"""
-    vertices_min = vertices.min(dim=1, keepdim=True)[0]
-    vertices_max = vertices.max(dim=1, keepdim=True)[0]
-    vertices_mid = (vertices_min + vertices_max) / 2
-    vertices = vertices - vertices_mid + vertice_shift
-    return vertices
-
 ############################################################################################
 
 vertices_optim = None
@@ -215,7 +202,7 @@ def train_iter(epoch: int, data):
     cam_proj = data['metadata']['cam_proj'].cuda()
     
     ### Prepare mesh data with projection regarding to camera ###
-    vertices_batch = recenter_vertices(vertices, vertice_shift)
+    vertices_batch = ian_utils.recenter_vertices(vertices, vertice_shift)
     # ian: vertices_batch.size() = vertices.size() = [batch, num_verts, 3]
     # ian: vertice_shift.size() = [3]
 
@@ -324,7 +311,7 @@ def render_image_and_mask_with_camera_params(elev, azim, r, look_at_height, fovy
 
 def render_image_and_mask(cam_proj, cam_transform, height, width):
     ### Prepare mesh data with projection regarding to camera ###
-    vertices_batch = recenter_vertices(vertices, vertice_shift)
+    vertices_batch = ian_utils.recenter_vertices(vertices, vertice_shift)
     # ian: vertices_batch.size() = vertices.size() = [batch, num_verts, 3]
     # ian: vertice_shift.size() = [3]
 
@@ -375,7 +362,7 @@ def train():
             {'rgb': kal.io.materials.PBRMaterial(diffuse_texture=torch.clamp(texture_map[0], 0., 1.))}
         ]
 
-        vertices_batch = recenter_vertices(vertices, vertice_shift)
+        vertices_batch = ian_utils.recenter_vertices(vertices, vertice_shift)
 
         # We are now adding a new state of the mesh to the timelapse
         # we only modify the texture and the vertices position
@@ -399,7 +386,7 @@ def train_with_single_view():
             {'rgb': kal.io.materials.PBRMaterial(diffuse_texture=torch.clamp(texture_map[0], 0., 1.))}
         ]
 
-        vertices_batch = recenter_vertices(vertices, vertice_shift)
+        vertices_batch = ian_utils.recenter_vertices(vertices, vertice_shift)
 
         # We are now adding a new state of the mesh to the timelapse
         # we only modify the texture and the vertices position
@@ -505,7 +492,7 @@ def visualize_training():
         cam_transform = torch.stack([data['metadata']['cam_transform'] for data in data_batch], dim=0).cuda()
         cam_proj = torch.stack([data['metadata']['cam_proj'] for data in data_batch], dim=0).cuda()
 
-        vertices_batch = recenter_vertices(vertices, vertice_shift)
+        vertices_batch = ian_utils.recenter_vertices(vertices, vertice_shift)
 
         face_vertices_camera, face_vertices_image, face_normals = \
             kal.render.mesh.prepare_vertices(
@@ -552,7 +539,7 @@ def visualize_training():
 
 def main():
     import sys
-    print(f"sys.path = {sys.path}")
+    print(f"sys.path = {sys.path}\n\n")
 
     ian_utils.init_path()
 

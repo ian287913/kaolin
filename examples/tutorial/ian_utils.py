@@ -26,6 +26,16 @@ def make_path(path: Path) -> Path:
 
 ############################ Camera transform & projection ############################
 
+def recenter_vertices(vertices, vertice_shift):
+    """Recenter vertices on vertice_shift for better optimization"""
+    vertices_min = vertices.min(dim=1, keepdim=True)[0]
+    vertices_max = vertices.max(dim=1, keepdim=True)[0]
+    vertices_mid = (vertices_min + vertices_max) / 2
+    vertices = vertices - vertices_mid + vertice_shift
+    return vertices
+
+############################ Camera transform & projection ############################
+
 def get_camera_transform_from_view(elev, azim, r=3.0, look_at_height=0.0):
     elev = np.deg2rad(elev)
     azim = np.deg2rad(azim)
@@ -59,7 +69,8 @@ def get_camera_transform_from_view(elev, azim, r=3.0, look_at_height=0.0):
 def get_camera_projection(fovyangle):
     fovyangle = np.deg2rad(fovyangle)
 
-    fovyangle = torch.tensor(fovyangle)
+    if (not torch.is_tensor(fovyangle)):
+        fovyangle = torch.tensor(fovyangle)
 
     camera_proj = kal.render.camera.generate_perspective_projection(fovyangle).to('cuda')
     return camera_proj
@@ -77,19 +88,34 @@ def save_image(tensor_image:torch.Tensor, save_path, save_name):
 
 ############################ Load Image & Metadata ############################
 
-def import_png(path: Path):
+def import_rgb(path: Path):
     if os.path.exists(path):
         return torch.from_numpy(
             np.array(Image.open(path))
         )[:, :, :3].float() / 255.
     else:
-        print(f"ERROR: file {path} does not exist.")
+        print(f"failed to load rgb: file {path} does not exist.")
+        return None
+
+# actually it's getting the 'R' channel
+def import_alpha(path: Path):
+    if os.path.exists(path):
+        return torch.from_numpy(
+            np.array(Image.open(path))
+        )[:, :, 0].float() / 255.
+    else:
+        print(f"failed to load alpha: file {path} does not exist.")
         return None
 
 def load_rendered_png_and_camera_data(root_dir: Path, data_idx: int = 0):
     # resolution follows 'rgb'
     output = {}
-    output['rgb'] = import_png(os.path.join(root_dir, f'{data_idx}_rgb.png'))
+    rgb = import_rgb(os.path.join(root_dir, f'{data_idx}_rgb.png'))
+    if (rgb is not None):
+        output['rgb'] = rgb
+    alpha = import_alpha(os.path.join(root_dir, f'{data_idx}_alpha.png'))
+    if (alpha is not None):
+        output['alpha'] = alpha
 
     with open(os.path.join(root_dir, f'{data_idx}_metadata.json'), 'r') as f:
         fmetadata = json.load(f)
