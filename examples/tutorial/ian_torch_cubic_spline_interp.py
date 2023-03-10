@@ -27,6 +27,11 @@ def interp_func_with_tangent(x, y, m, xs):
   I = T.searchsorted(x[1:], xs)
   dx = (x[I+1]-x[I])
   hh = h_poly((xs-x[I])/dx)
+  hh[0] = hh[0].cuda()
+  hh[1] = hh[1].cuda()
+  hh[2] = hh[2].cuda()
+  hh[3] = hh[3].cuda()
+
   return hh[0]*y[I] + hh[1]*m[I]*dx + hh[2]*y[I+1] + hh[3]*m[I+1]*dx
 
 def test_interpolation():
@@ -42,21 +47,21 @@ def test_interpolation():
   for yss in ys:
     print(f"{yss}")
 
-# Example
-# See https://i.stack.imgur.com/zgA0s.png for resulting image
-if __name__ == "__main__":
-  test_interpolation()
-  return
-  import matplotlib.pylab as P # for plotting
-  x = T.linspace(0, 6, 7)
-  y = x.sin()
-  xs = T.linspace(0, 6, 101)
-  ys = interp(x, y, xs)
-  Ys = integ(x, y, xs)
-  P.scatter(x, y, label='Samples', color='purple')
-  P.plot(xs, ys, label='Interpolated curve')
-  P.plot(xs, xs.sin(), '--', label='True Curve')
-  P.plot(xs, Ys, label='Spline Integral')
-  P.plot(xs, 1-xs.cos(), '--', label='True Integral')
-  P.legend()
-  P.show()
+# # Example
+# # See https://i.stack.imgur.com/zgA0s.png for resulting image
+# if __name__ == "__main__":
+#   test_interpolation()
+#   return
+#   import matplotlib.pylab as P # for plotting
+#   x = T.linspace(0, 6, 7)
+#   y = x.sin()
+#   xs = T.linspace(0, 6, 101)
+#   ys = interp(x, y, xs)
+#   Ys = integ(x, y, xs)
+#   P.scatter(x, y, label='Samples', color='purple')
+#   P.plot(xs, ys, label='Interpolated curve')
+#   P.plot(xs, xs.sin(), '--', label='True Curve')
+#   P.plot(xs, Ys, label='Spline Integral')
+#   P.plot(xs, 1-xs.cos(), '--', label='True Integral')
+#   P.legend()
+#   P.show()
