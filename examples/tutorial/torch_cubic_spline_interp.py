@@ -41,6 +41,16 @@ def interp_func(x, y):
     return hh[0]*y[I] + hh[1]*m[I]*dx + hh[2]*y[I+1] + hh[3]*m[I+1]*dx
   return f
 
+# m is tangent
+def interp_func_with_tangent(x, y, m, xs):
+  "Returns integral of interpolating function"
+  if len(y)==1: # in the case of 1 point, treat as constant function
+    return y[0] + T.zeros_like(xs)
+  I = T.searchsorted(x[1:], xs)
+  dx = (x[I+1]-x[I])
+  hh = h_poly((xs-x[I])/dx)
+  return hh[0]*y[I] + hh[1]*m[I]*dx + hh[2]*y[I+1] + hh[3]*m[I+1]*dx
+
 def interp(x, y, xs):
   return interp_func(x,y)(xs)
 
@@ -68,9 +78,24 @@ def integ_func(x, y):
 def integ(x, y, xs):
   return integ_func(x,y)(xs)
 
+def test_interpolation():
+  # define keys
+  x = T.linspace(0, 1, 2)
+  y = T.linspace(0, 1, 2)
+  m = T.linspace(0, 0, 2)
+  # define ts
+  xs = T.linspace(0, 1, 5)
+
+  ys = interp_func_with_tangent(x, y, m, xs)
+
+  for yss in ys:
+    print(f"{yss}")
+
 # Example
 # See https://i.stack.imgur.com/zgA0s.png for resulting image
 if __name__ == "__main__":
+  test_interpolation()
+
   import matplotlib.pylab as P # for plotting
   x = T.linspace(0, 6, 7)
   y = x.sin()
