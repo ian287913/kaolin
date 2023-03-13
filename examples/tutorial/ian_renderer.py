@@ -60,6 +60,25 @@ class Mesh:
         # # print(f"faces.type = {type(faces)}")
         # # print(f"faces.shape = {faces.shape}")
 
+    def set_mesh_by_samples(self, ys, lod_y):
+        self.vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda',
+                                requires_grad=True)
+        for idx, y in enumerate(ys):
+            new_vertices = torch.zeros((ys.shape[0], 3), dtype=torch.float, device='cuda',
+                                requires_grad=True)
+            sample_xs = torch.linspace(0, y, lod_y, dtype=torch.float, device='cuda')
+            new_vertices[:][0] = (idx) / (len(ys) - 1)
+            new_vertices[:][1] = sample_xs
+
+            torch.cat(self.vertices, new_vertices, 0)
+
+        self.vertices = self.vertices.unsqueeze(0)
+
+        # faces = [[0, 1, 2], [1, 3, 2]]
+        # uvs = [[0, 0], [1, 0], [0, 1], [1, 1]]
+        # face_uvs_idx = [[0, 1, 2], [1, 2, 3]]
+        # self.set_mesh(vertices, faces, uvs, face_uvs_idx, 512)
+
 
 class Renderer:
     def __init__(self, device, batch_size, render_res=(512, 512), interpolation_mode='bilinear'):
