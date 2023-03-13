@@ -38,7 +38,7 @@ nb_vertices = None
 gt_key_size = 3
 gt_key_xs = torch.as_tensor(np.array([0, 0.5, 1]), dtype=torch.float, device='cuda')
 gt_key_ys = torch.as_tensor(np.array([0, -1, 2]), dtype=torch.float, device='cuda')
-gt_key_ts = torch.as_tensor(np.array([5, -2, -1]), dtype=torch.float, device='cuda')
+gt_key_ts = torch.as_tensor(np.array([10, -2, -1]), dtype=torch.float, device='cuda')
 
 key_size = 3
 key_xs = None
@@ -102,12 +102,18 @@ def train():
     calculate_groun_truth(sample_xs)
 
     for epoch in range(num_epoch):
-        loss = train_iter(epoch, sample_xs)
+        if (epoch % 10 == 0):
+            visualize_results(sample_xs, epoch)
 
+        loss = train_iter(epoch, sample_xs)
+        
         # step scheduler
         key_ys_scheduler.step()
         key_ts_scheduler.step()
         print(f"Epoch {epoch} - loss: {float(loss)}")
+
+    visualize_results(sample_xs, num_epoch)
+
 
 def train_iter(epoch: int, sample_xs):
     global gt_ys
@@ -130,7 +136,7 @@ def train_iter(epoch: int, sample_xs):
 
     return loss
 
-def visualize_results(sample_xs):
+def visualize_results(sample_xs, epoch = 0):
     with torch.no_grad():
         ys = ian_torch_cubic_spline_interp.interp_func_with_tangent(key_xs, key_ys, key_ts, sample_xs)
 
@@ -138,14 +144,17 @@ def visualize_results(sample_xs):
     print(f"key_ys = {key_ys}")
     print(f"key_ts = {key_ts}")
 
-    pylab.scatter(sample_xs.cpu(), gt_ys.cpu(), label='Ground Truth', color='purple')
-    pylab.plot(sample_xs.cpu(), ys.cpu(), label='Interpolated curve')
-    pylab.legend()
-    pylab.show()
+    pylab.scatter(sample_xs.cpu(), gt_ys.cpu(), label='Ground Truth', color='blue')
+    pylab.plot(sample_xs.cpu(), ys.cpu(), label='Interpolated curve', color='red')
+    pylab.scatter(key_xs.detach().cpu(), key_ys.detach().cpu(), label='Ground Truth', color='red')
+    ##pylab.legend()
+    ##pylab.show()
+    pylab.savefig(f"./optimization record/{epoch}.png")
+    pylab.close()
 
 
 if __name__ == "__main__":
     prepare_loss()
     setup_optimizer()
     train()
-    visualize_results(sample_xs)
+    ##visualize_results(sample_xs)
