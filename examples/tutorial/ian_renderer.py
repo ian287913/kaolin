@@ -12,11 +12,14 @@ import ian_utils
 
 import kaolin as kal
 
+import ian_torch_cubic_spline_interp
+
+
 """
-- **vertices** (torch.Tensor):  of shape (num_vertices, 3)
-- **faces** (torch.LongTensor): of shape (num_faces, face_size)
-- **uvs** (torch.Tensor):       of shape (num_uvs, 2)
-- **face_uvs_idx** (torch.LongTensor): of shape (num_faces, face_size)
+vertices        (torch.Tensor):     of shape (num_vertices, 3)
+faces           (torch.LongTensor): of shape (num_faces, face_size)
+uvs             (torch.Tensor):     of shape (num_uvs, 2)
+face_uvs_idx    (torch.LongTensor): of shape (num_faces, face_size)
 """
 class Mesh:
     def __init__(self, dummy):
@@ -60,25 +63,79 @@ class Mesh:
         # # print(f"faces.type = {type(faces)}")
         # # print(f"faces.shape = {faces.shape}")
 
-    def set_mesh_by_samples(self, ys, lod_y):
+    def set_mesh_by_samples(self, ys: torch.Tensor, lod_y, texture_res):
+        assert lod_y > 1, f'lod_y should greater than 1!'
+        assert ys.shape[0] > 1, f'ys.shape[0] should greater than 1!'
+
+        # vertices
         self.vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda',
                                 requires_grad=True)
+        # for each column
         for idx, y in enumerate(ys):
-            new_vertices = torch.zeros((ys.shape[0], 3), dtype=torch.float, device='cuda',
-                                requires_grad=True)
-            sample_xs = torch.linspace(0, y, lod_y, dtype=torch.float, device='cuda')
-            new_vertices[:][0] = (idx) / (len(ys) - 1)
-            new_vertices[:][1] = sample_xs
+            # # (lod_y, 3)
+            # new_vertices = torch.zeros((ys.shape[0], 3), dtype=torch.float, device='cuda',
+            #                     requires_grad=True)
+            # y value: from 0 to y
+            # (1, lod_y)
+            ys_in_col = torch.linspace(0, y, lod_y, dtype=torch.float, device='cuda', requires_grad=True).unsqueeze(0)
+            print(f"ys_in_col.shape = {ys_in_col.shape}")
 
-            torch.cat(self.vertices, new_vertices, 0)
+            # x value are the same in this column
+            # (1, lod_y)
+            xs_in_col = torch.tensor((idx) / (len(ys) - 1)).repeat(lod_y).unsqueeze(0).cuda()
+            xs_in_col.requires_grad = False
+            print(f"xs_in_col.shape = {xs_in_col.shape}")
+            # (1, lod_y)
+            zs_in_col = torch.tensor(0).repeat(lod_y).unsqueeze(0).cuda()
+            zs_in_col.requires_grad = False
+            print(f"zs_in_col.shape = {zs_in_col.shape}")
+
+            new_vertices = torch.cat((xs_in_col, ys_in_col, zs_in_col), 0)
+            print(f"new_vertices.shape = {new_vertices.shape}")
+            new_vertices = new_vertices.permute(1, 0)
+            print(f"new_vertices.shape = {new_vertices.shape}")
+
+            print(f"before self.vertices.shape = {self.vertices.shape}")
+            self.vertices = torch.cat((self.vertices, new_vertices), 0)
+            print(f"after self.vertices.shape = {self.vertices.shape}\n\n")
+
 
         self.vertices = self.vertices.unsqueeze(0)
 
-        # faces = [[0, 1, 2], [1, 3, 2]]
-        # uvs = [[0, 0], [1, 0], [0, 1], [1, 1]]
-        # face_uvs_idx = [[0, 1, 2], [1, 2, 3]]
-        # self.set_mesh(vertices, faces, uvs, face_uvs_idx, 512)
+        # faces
+        self.faces = torch.zeros(((lod_y - 1) * (ys.shape[0] - 1) * 2, 3), dtype=torch.long, device='cuda',
+                                requires_grad=False)
+        # set the first quad (2 triangles)
+        self.faces[0] = torch.Tensor([0, lod_y, 1])
+        self.faces[1] = torch.Tensor([1, lod_y, lod_y+1])
 
+        for tri_idx in range(2, self.faces.shape[0], 2):
+            self.faces[tri_idx] = self.faces[tri_idx - 2] + 1
+            self.faces[tri_idx + 1] = self.faces[tri_idx - 1] + 1
+            if ((tri_idx / 2) % (lod_y - 1) == 0):
+                self.faces[tri_idx] = self.faces[tri_idx] + 1
+                self.faces[tri_idx + 1] = self.faces[tri_idx + 1] + 1
+
+        print(f"self.faces.shape = {self.faces.shape}")
+        print(f"self.faces = \n{self.faces}")
+        
+
+        # uvs
+        # TODO: set uvs according to the lod_y and column idx
+        self.uvs = torch.zeros((self.vertices.shape[1], 2), dtype=torch.float, device='cuda', requires_grad=False)
+        self.uvs = self.uvs.cuda().unsqueeze(0)
+
+        # face_uvs_idx
+        self.face_uvs_idx = torch.clone(self.faces).detach()
+        self.face_uvs_idx.requires_grad = False
+
+        # face_uvs
+        self.face_uvs = kal.ops.mesh.index_vertices_by_faces(self.uvs, self.face_uvs_idx).detach()
+        self.face_uvs.requires_grad = False
+
+        # texture_map
+        self.texture_map = torch.ones((1, 3, texture_res, texture_res), dtype=torch.float, device='cuda',
+                            requires_grad=True)
 
 class Renderer:
     def __init__(self, device, batch_size, render_res=(512, 512), interpolation_mode='bilinear'):
@@ -95,10 +152,10 @@ class Renderer:
         cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
         cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
         # render image and mask
-        image, mask, soft_mask = self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh, sigmainv)
-        return image, mask, soft_mask
+        return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh, sigmainv)
 
     def render_image_and_mask(self, cam_proj, cam_transform, height, width, mesh:Mesh, sigmainv = 7000):
+
         ### Prepare mesh data with projection regarding to camera ###
         face_vertices_camera, face_vertices_image, face_normals = \
             kal.render.mesh.prepare_vertices(
@@ -221,6 +278,11 @@ def re_render_with_ui_params(val):
     print(f"elev = {new_elev}, new_azim = {new_azim}, new_radius = {new_radius}, new_look_at_height = {new_look_at_height}, new_fovyangle = {new_fovyangle}, new_sigmainv = {new_sigmainv}")
 
     newMesh = Mesh(123)
+    newMesh.set_mesh_by_samples(calculate_groun_truth(), 4, 512)
+    print(f"newMesh.vertices.shape = {newMesh.vertices.shape}")
+    print(f"newMesh.vertices = \n{newMesh.vertices}")
+
+
     newRenderer = Renderer('cuda', 1)
 
     # render
@@ -240,6 +302,19 @@ def re_render_with_ui_params(val):
     ##ax.imshow(ian_utils.tensor2numpy(torch.clamp(texture_map, 0., 1.).permute(0,2,3,1))[0])
     fig.canvas.draw_idle()
 
+
+############################################################################################
+
+gt_key_size = 3
+gt_key_xs = torch.as_tensor(np.array([0, 0.5, 1]), dtype=torch.float, device='cuda')
+gt_key_ys = torch.as_tensor(np.array([2, 1, 3]), dtype=torch.float, device='cuda')
+gt_key_ts = torch.as_tensor(np.array([10, -2, -1]), dtype=torch.float, device='cuda')
+
+def calculate_groun_truth():
+    sample_size = 20
+    sample_xs = torch.linspace(0, 1, sample_size, dtype=torch.float, device='cuda')
+    
+    return ian_torch_cubic_spline_interp.interp_func_with_tangent(gt_key_xs, gt_key_ys, gt_key_ts, sample_xs)
 
 ############################################################################################
 

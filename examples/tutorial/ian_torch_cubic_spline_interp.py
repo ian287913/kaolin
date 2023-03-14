@@ -1,3 +1,4 @@
+# cubic hermite spline implemented in PyTorch, make it available to be optimized by torch autograd
 # from https://gist.github.com/chausies/c453d561310317e7eda598e229aea537
 import torch as T
 

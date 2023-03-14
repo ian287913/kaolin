@@ -83,11 +83,6 @@ def setup_optimizer():
 gt_ys = None
 def calculate_groun_truth(sample_xs):
     global gt_ys
-    print(f"gt_key_xs.device = {gt_key_xs.device}")
-    print(f"gt_key_ys.device = {gt_key_ys.device}")
-    print(f"gt_key_ts.device = {gt_key_ts.device}")
-    print(f"sample_xs.device = {sample_xs.device}")
-
     gt_ys = ian_torch_cubic_spline_interp.interp_func_with_tangent(gt_key_xs, gt_key_ys, gt_key_ts, sample_xs)
 
 ################################## Training ##################################
