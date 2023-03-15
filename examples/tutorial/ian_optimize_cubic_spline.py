@@ -124,7 +124,7 @@ def visualize_results(spline_optimizer:SplineOptimizer, sample_xs, epoch = 0):
     ##pylab.scatter(key_xs.detach().cpu(), key_ys.detach().cpu(), color='red')
     pylab.legend()
     pylab.title(f'epoch: {epoch}')
-    pylab.waitforbuttonpress(0) # this will wait for indefinite time
+    pylab.waitforbuttonpress(0)
     pylab.cla()
     
     ##pylab.close()

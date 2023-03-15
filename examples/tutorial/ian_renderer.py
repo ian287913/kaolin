@@ -13,7 +13,7 @@ import ian_utils
 import kaolin as kal
 
 import ian_torch_cubic_spline_interp
-
+import ian_utils
 
 """
 vertices        (torch.Tensor):     of shape (num_vertices, 3)
@@ -63,8 +63,9 @@ class Mesh:
         # # print(f"faces.type = {type(faces)}")
         # # print(f"faces.shape = {faces.shape}")
 
-    def set_mesh_by_samples(self, ys: torch.Tensor, lod_y, texture_res):
+    def set_mesh_by_samples(self, roots: torch.Tensor, ys: torch.Tensor, lod_y, texture_res):
         assert lod_y > 1, f'lod_y should greater than 1!'
+        assert roots.shape[0] > 1, f'roots.shape[0] should greater than 1!'
         assert ys.shape[0] > 1, f'ys.shape[0] should greater than 1!'
 
         # vertices
@@ -72,33 +73,17 @@ class Mesh:
                                 requires_grad=True)
         # for each column
         for idx, y in enumerate(ys):
-            # # (lod_y, 3)
-            # new_vertices = torch.zeros((ys.shape[0], 3), dtype=torch.float, device='cuda',
-            #                     requires_grad=True)
-            # y value: from 0 to y
-            # (1, lod_y)
-            ys_in_col = torch.linspace(0, y, lod_y, dtype=torch.float, device='cuda', requires_grad=True).unsqueeze(0)
-            print(f"ys_in_col.shape = {ys_in_col.shape}")
+            root_pos = roots[idx]
+            top_pos = roots[idx] + torch.tensor((0, y, 0), 
+                                   dtype=torch.float, device='cuda', requires_grad=True)
 
-            # x value are the same in this column
-            # (1, lod_y)
-            xs_in_col = torch.tensor((idx) / (len(ys) - 1)).repeat(lod_y).unsqueeze(0).cuda()
-            xs_in_col.requires_grad = False
-            print(f"xs_in_col.shape = {xs_in_col.shape}")
-            # (1, lod_y)
-            zs_in_col = torch.tensor(0).repeat(lod_y).unsqueeze(0).cuda()
-            zs_in_col.requires_grad = False
-            print(f"zs_in_col.shape = {zs_in_col.shape}")
-
-            new_vertices = torch.cat((xs_in_col, ys_in_col, zs_in_col), 0)
+            new_vertices = ian_utils.torch_linspace(root_pos, top_pos, lod_y)
             print(f"new_vertices.shape = {new_vertices.shape}")
-            new_vertices = new_vertices.permute(1, 0)
-            print(f"new_vertices.shape = {new_vertices.shape}")
+            print(f"new_vertices = {new_vertices}")
 
             print(f"before self.vertices.shape = {self.vertices.shape}")
             self.vertices = torch.cat((self.vertices, new_vertices), 0)
             print(f"after self.vertices.shape = {self.vertices.shape}\n\n")
-
 
         self.vertices = self.vertices.unsqueeze(0)
 
@@ -108,7 +93,7 @@ class Mesh:
         # set the first quad (2 triangles)
         self.faces[0] = torch.Tensor([0, lod_y, 1])
         self.faces[1] = torch.Tensor([1, lod_y, lod_y+1])
-
+        # set all faces
         for tri_idx in range(2, self.faces.shape[0], 2):
             self.faces[tri_idx] = self.faces[tri_idx - 2] + 1
             self.faces[tri_idx + 1] = self.faces[tri_idx - 1] + 1
@@ -277,8 +262,11 @@ def re_render_with_ui_params(val):
     new_fovyangle = 60
     print(f"elev = {new_elev}, new_azim = {new_azim}, new_radius = {new_radius}, new_look_at_height = {new_look_at_height}, new_fovyangle = {new_fovyangle}, new_sigmainv = {new_sigmainv}")
 
+    origin_pos = torch.tensor((-1, -1, 0), dtype=torch.float, device='cuda', requires_grad=True)
+    length_x = torch.tensor(2, dtype=torch.float, device='cuda', requires_grad=True)
+    lod = 20
     newMesh = Mesh(123)
-    newMesh.set_mesh_by_samples(calculate_groun_truth(), 4, 512)
+    newMesh.set_mesh_by_samples(calculate_roots(origin_pos, length_x, lod), calculate_groun_truth(lod), 4, 512)
     print(f"newMesh.vertices.shape = {newMesh.vertices.shape}")
     print(f"newMesh.vertices = \n{newMesh.vertices}")
 
@@ -310,11 +298,21 @@ gt_key_xs = torch.as_tensor(np.array([0, 0.5, 1]), dtype=torch.float, device='cu
 gt_key_ys = torch.as_tensor(np.array([2, 1, 3]), dtype=torch.float, device='cuda')
 gt_key_ts = torch.as_tensor(np.array([10, -2, -1]), dtype=torch.float, device='cuda')
 
-def calculate_groun_truth():
-    sample_size = 20
+def calculate_groun_truth(sample_size):
     sample_xs = torch.linspace(0, 1, sample_size, dtype=torch.float, device='cuda')
     
     return ian_torch_cubic_spline_interp.interp_func_with_tangent(gt_key_xs, gt_key_ys, gt_key_ts, sample_xs)
+
+def calculate_roots(origin_pos: torch.Tensor, length_x, lod):
+    start_pos = origin_pos
+    end_pos = origin_pos + torch.tensor((length_x, 0, 0), dtype=torch.float, device='cuda', requires_grad=True)
+
+    roots = ian_utils.torch_linspace(start_pos, end_pos, lod)
+
+    print(f"roots.shape = {roots.shape}")
+    print(f"roots = {roots}")
+    
+    return roots
 
 ############################################################################################
 
