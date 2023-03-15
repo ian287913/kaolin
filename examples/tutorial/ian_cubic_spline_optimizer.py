@@ -23,8 +23,8 @@ scheduler_gamma = 0.5
 
 ################################## Class Definition ##################################
 
-class SplineOptimizer:
-    def __init__(self, lod = 3, y_weight = 10, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5):
+class CubicSplineOptimizer:
+    def __init__(self, key_size = 3, y_weight = 10, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5):
         # Hyperparameters
         self.y_weight = y_weight
         self.y_lr = y_lr
@@ -33,11 +33,11 @@ class SplineOptimizer:
         self.scheduler_gamma = scheduler_gamma
 
         # initialize keys
-        self.key_xs = torch.linspace(0, 1, lod, dtype=torch.float, device='cuda',
+        self.key_xs = torch.linspace(0, 1, key_size, dtype=torch.float, device='cuda',
                                      requires_grad=False)
-        self.key_ys = torch.ones((lod), dtype=torch.float, device='cuda',
+        self.key_ys = torch.ones(key_size, dtype=torch.float, device='cuda',
                                     requires_grad=True)
-        self.key_ts = torch.zeros((lod), dtype=torch.float, device='cuda',
+        self.key_ts = torch.zeros(key_size, dtype=torch.float, device='cuda',
                                     requires_grad=True)
         # initialize optimizers and schedulers
         self.key_ys_optim  = torch.optim.Adam(params=[self.key_ys], lr = self.y_lr)
@@ -84,10 +84,10 @@ def train_spline():
     num_epoch = 100
     visualize_epoch_interval = 10
     sample_size = 100
-    lod = 3
+    key_size = 3
 
-    spline_optimizer = SplineOptimizer(
-        lod, 
+    spline_optimizer = CubicSplineOptimizer(
+        key_size, 
         y_weight=y_weight, 
         y_lr=y_lr, 
         t_lr=t_lr, 
@@ -114,7 +114,7 @@ def train_spline():
 
     visualize_results(spline_optimizer, sample_xs, num_epoch)
 
-def visualize_results(spline_optimizer:SplineOptimizer, sample_xs, epoch = 0):
+def visualize_results(spline_optimizer:CubicSplineOptimizer, sample_xs, epoch = 0):
     with torch.no_grad():
         ys = spline_optimizer.calculate_ys(sample_xs)
     gt_ys = calculate_ground_truth(sample_xs)
