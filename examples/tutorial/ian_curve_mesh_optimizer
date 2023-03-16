@@ -14,18 +14,29 @@ import kaolin as kal
 
 import ian_cubic_spline_optimizer
 import ian_renderer
+import ian_utils
 
 # Hyperparameters
+image_weight = 100
+alpha_weight = 100
 y_weight = 100
 y_lr = 5
 t_lr = 5
 scheduler_step_size = 20
 scheduler_gamma = 0.5
+origin_pos_lr = 5e-1
+length_x_lr = 5e-1
+render_res = 512
 
 ################################## Class Definition ##################################
 
 class CurveMeshOptimizer:
-    def __init__(self, key_size = 3, y_weight = 10, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5):
+    def __init__(self, 
+                 key_size = 3, y_weight = 10, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5,
+                 origin_pos_lr = 5e-1, length_x_lr = 5e-1,
+                 render_res = 512):
+        
+        # init curve
         self.spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
             key_size, 
             y_weight=y_weight, 
@@ -34,96 +45,119 @@ class CurveMeshOptimizer:
             scheduler_step_size=scheduler_step_size, 
             scheduler_gamma=scheduler_gamma)
         
-        # Hyperparameters
-        #self....
+        # init mesh & renderer
+        self.body_mesh = ian_renderer.Mesh(None)
+        self.renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
 
         # initialize leaves
+        self.origin_pos = torch.tensor((-1, -1, 0), dtype=torch.float, device='cuda', requires_grad=True)
+        self.length_x = torch.tensor(2, dtype=torch.float, device='cuda', requires_grad=True)
 
         # initialize optimizers and schedulers
-        self.key_ys_optim  = torch.optim.Adam(params=[self.key_ys], lr = self.y_lr)
-        self.key_ts_optim  = torch.optim.Adam(params=[self.key_ts], lr = self.t_lr)
-        self.key_ys_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.key_ys_optim,
-            step_size=self.scheduler_step_size,
-            gamma=self.scheduler_gamma)
-        self.key_ts_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.key_ts_optim,
-            step_size=self.scheduler_step_size,
-            gamma=self.scheduler_gamma)
+        self.origin_pos_optim  = torch.optim.Adam(params=[self.origin_pos], lr = origin_pos_lr)
+        self.length_x_optim  = torch.optim.Adam(params=[self.length_x], lr = length_x_lr)
+        self.origin_pos_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.origin_pos_optim,
+            step_size=scheduler_step_size,
+            gamma=scheduler_gamma)
+        self.length_x_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.length_x_optim,
+            step_size=scheduler_step_size,
+            gamma=scheduler_gamma)
     '''
     optimization related funcitons
     should call by this order: 
     1. zero_grad()
     2. calculate_ys()
-    3. loss.backward() outside the class w.r.t. the tensors returned by calculate_ys()
+    3. loss.backward() outside the class w.r.t. the pixel tensors returned by render()
     4. step()
     '''
     def zero_grad(self):
         self.spline_optimizer.zero_grad()
-        #self.....zero_grad()
-    def render(self, lod):
+
+        self.length_x_optim.zero_grad()
+        self.origin_pos_optim.zero_grad()
+        
+    def render(self, lod_x, lod_y, data):
+        
+        self.body_mesh.set_mesh_by_samples(ian_renderer.calculate_roots(self.origin_pos, self.length_x, lod_x), self.spline_optimizer.calculate_ys_with_lod_x(lod_x), lod_y, 512)
+
         #render...
-        return 
+        rendered_image, mask, soft_mask = self.renderer.render_image_and_mask_with_camera_params(
+            elev = data['metadata']['cam_elev'], 
+            azim = data['metadata']['cam_azim'], 
+            r = data['metadata']['cam_radius'], 
+            look_at_height = data['metadata']['cam_look_at_height'], 
+            fovyangle = data['metadata']['cam_fovyangle'],
+            mesh = self.body_mesh,
+            sigmainv = 7000)
+        
+        return (rendered_image, mask, soft_mask)
     
     def step(self):
-        self.key_ys_optim.step()
-        self.key_ts_optim.step()
-        self.key_ys_scheduler.step()
-        self.key_ts_scheduler.step()
+        self.spline_optimizer.step()
+
+        self.length_x_optim.step()
+        self.origin_pos_optim.step()
+        self.length_x_scheduler.step()
+        self.origin_pos_scheduler.step()
 
 ################################## Utils ##################################
 
-def calculate_ground_truth(sample_xs):
-    gt_key_size = 3
-    gt_key_xs = torch.as_tensor(np.array([0, 0.5, 1]), dtype=torch.float, device='cuda')
-    gt_key_ys = torch.as_tensor(np.array([0, -1, 2]), dtype=torch.float, device='cuda')
-    gt_key_ts = torch.as_tensor(np.array([10, -2, -1]), dtype=torch.float, device='cuda')
-    return ian_torch_cubic_spline_interp.interp_func_with_tangent(gt_key_xs, gt_key_ys, gt_key_ts, sample_xs)
-
-def train_spline():
+def train_mesh():
     # parameters
+    rendered_path_single = "./resources/rendered_curved_mesh/"
     num_epoch = 100
     visualize_epoch_interval = 10
     sample_size = 100
     key_size = 3
+    lod_x = 20
+    lod_y = 20
 
-    spline_optimizer = SplineOptimizer(
+    # get ground truth
+    # get data
+    train_data, dataloader = ian_utils.create_dataloader_with_single_view(rendered_path_single, 1)
+    data = train_data[0]
+    gt_rgb = data['rgb'].cuda()
+    gt_alpha = data['alpha'].cuda()
+
+    # init optimizer
+    curve_mesh_optimizer = CurveMeshOptimizer(
         key_size, 
         y_weight=y_weight, 
         y_lr=y_lr, 
         t_lr=t_lr, 
         scheduler_step_size=scheduler_step_size, 
-        scheduler_gamma=scheduler_gamma)
+        scheduler_gamma=scheduler_gamma,
+        origin_pos_lr=origin_pos_lr,
+        length_x_lr=length_x_lr,
+        render_res=gt_rgb.shape[0])
     
-    sample_xs = torch.linspace(0, 1, sample_size, dtype=torch.float, device='cuda')
-
-    gt_ys = calculate_ground_truth(sample_xs)
-
+    
     for epoch in range(num_epoch):
         if (epoch % visualize_epoch_interval == 0):
-            visualize_results(spline_optimizer, sample_xs, epoch)
+            visualize_results(curve_mesh_optimizer, lod_x, lod_y, data, epoch)
 
-        spline_optimizer.zero_grad()
-        ys = spline_optimizer.calculate_ys(sample_xs)
+        curve_mesh_optimizer.zero_grad()
+        rendered_image, mask, soft_mask = curve_mesh_optimizer.render(lod_x=lod_x, lod_y=lod_y, data=data)
         ### Compute Losses ###
-        y_loss = torch.mean(torch.abs(gt_ys - ys))
-        loss = (y_loss * y_weight)
+        image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
+        loss = (image_loss * image_weight)
         ### Update the parameters ###
         loss.backward()
-        spline_optimizer.step()
+        curve_mesh_optimizer.step()
+
         print(f"Epoch {epoch} - loss: {float(loss)}")
 
-    visualize_results(spline_optimizer, sample_xs, num_epoch)
+    visualize_results(curve_mesh_optimizer, lod_x, lod_y, data, epoch)
 
-def visualize_results(spline_optimizer:SplineOptimizer, sample_xs, epoch = 0):
+
+def visualize_results(curve_mesh_optimizer:CurveMeshOptimizer, lod_x, lod_y, data, epoch = 0):
     with torch.no_grad():
-        ys = spline_optimizer.calculate_ys(sample_xs)
-    gt_ys = calculate_ground_truth(sample_xs)
+        rendered_image, mask, soft_mask = curve_mesh_optimizer.render(lod_x=lod_x, lod_y=lod_y, data=data)
 
-    pylab.scatter(sample_xs.cpu(), gt_ys.cpu(), label='Ground Truth', color='blue')
-    pylab.plot(sample_xs.cpu(), ys.cpu(), label='Interpolated Curve', color='red')
-    ##pylab.scatter(key_xs.detach().cpu(), key_ys.detach().cpu(), color='red')
-    pylab.legend()
+    print(f"visualize_results: rendered_image.shape = {rendered_image.shape}")
+    pylab.imshow(rendered_image[0].cpu().detach())
     pylab.title(f'epoch: {epoch}')
     pylab.waitforbuttonpress(0)
     pylab.cla()
@@ -134,4 +168,4 @@ def visualize_results(spline_optimizer:SplineOptimizer, sample_xs, epoch = 0):
     ##pylab.close()
 
 if __name__ == "__main__":
-    train_spline()
+    train_mesh()

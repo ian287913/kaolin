@@ -61,6 +61,9 @@ class CubicSplineOptimizer:
     def zero_grad(self):
         self.key_ys_optim.zero_grad()
         self.key_ts_optim.zero_grad()
+    def calculate_ys_with_lod_x(self, lod_x):
+        sample_xs = torch.linspace(0, 1, lod_x, dtype=torch.float, device='cuda')
+        return ian_torch_cubic_spline_interp.interp_func_with_tangent(self.key_xs, self.key_ys, self.key_ts, sample_xs)
     def calculate_ys(self, sample_xs):
         return ian_torch_cubic_spline_interp.interp_func_with_tangent(self.key_xs, self.key_ys, self.key_ts, sample_xs)
     
