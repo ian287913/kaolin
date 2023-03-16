@@ -215,7 +215,7 @@ def init_plt():
     azim_slider.on_changed(re_render_with_ui_params)
 
     ax_radius = plt.axes([0.25, 0.25, 0.65, 0.03])
-    radius_slider = Slider(ax_radius, 'radius', 0.0, 20, 10)
+    radius_slider = Slider(ax_radius, 'radius', 0.0, 20, 4)
     radius_slider.on_changed(re_render_with_ui_params)
     
     ax_sigmainv = plt.axes([0.25, 0.2, 0.65, 0.03])
@@ -237,10 +237,9 @@ def render_button_clicked(val):
 
 def saveimg_button_clicked(val):
     
-    # ian_utils.save_image(rendered_image, ian_utils.output_path, 'rendered_image')
+    saved_file_path = ian_utils.save_image(rendered_image, output_path, 'rendered_image')
     # ian_utils.save_image(torch.clamp(texture_map, 0., 1.).permute(0, 2, 3, 1), ian_utils.output_path, 'texture')
-    
-    print(f"...")
+    print(f"image saved at {saved_file_path}")
 
 # called when the ui is updated
 rendered_image = None
@@ -315,8 +314,14 @@ def calculate_roots(origin_pos: torch.Tensor, length_x, lod):
     return roots
 
 ############################################################################################
-
+root_path: Path = Path('./renderer_output/')
+output_path : Path
 def main():
+    global root_path
+    global output_path
+
+    root_path, output_path = ian_utils.init_path(root_path)
+
     init_plt()
 
 if __name__ == '__main__':
