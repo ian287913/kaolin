@@ -78,12 +78,12 @@ class Mesh:
                                    dtype=torch.float, device='cuda', requires_grad=True)
 
             new_vertices = ian_utils.torch_linspace(root_pos, top_pos, lod_y)
-            print(f"new_vertices.shape = {new_vertices.shape}")
-            print(f"new_vertices = {new_vertices}")
+            # # print(f"new_vertices.shape = {new_vertices.shape}")
+            # # print(f"new_vertices = {new_vertices}")
 
-            print(f"before self.vertices.shape = {self.vertices.shape}")
+            # # print(f"before self.vertices.shape = {self.vertices.shape}")
             self.vertices = torch.cat((self.vertices, new_vertices), 0)
-            print(f"after self.vertices.shape = {self.vertices.shape}\n\n")
+            # # print(f"after self.vertices.shape = {self.vertices.shape}\n\n")
 
         self.vertices = self.vertices.unsqueeze(0)
 
@@ -101,8 +101,8 @@ class Mesh:
                 self.faces[tri_idx] = self.faces[tri_idx] + 1
                 self.faces[tri_idx + 1] = self.faces[tri_idx + 1] + 1
 
-        print(f"self.faces.shape = {self.faces.shape}")
-        print(f"self.faces = \n{self.faces}")
+        # # print(f"self.faces.shape = {self.faces.shape}")
+        # # print(f"self.faces = \n{self.faces}")
         
 
         # uvs
@@ -161,11 +161,11 @@ class Renderer:
             torch.ones((self.batch_size, mesh.faces.shape[0], 3, 1), device='cuda')
         ]
 
-        print(f"face_vertices_camera.shape = {face_vertices_camera.shape}")
-        print(f"face_vertices_image.shape = {face_vertices_image.shape}")
-        print(f"face_attributes[0].shape = {face_attributes[0].shape}")
-        print(f"face_attributes[1].shape = {face_attributes[1].shape}")
-        print(f"face_normals.shape = {face_normals.shape}")
+        # # print(f"face_vertices_camera.shape = {face_vertices_camera.shape}")
+        # # print(f"face_vertices_image.shape = {face_vertices_image.shape}")
+        # # print(f"face_attributes[0].shape = {face_attributes[0].shape}")
+        # # print(f"face_attributes[1].shape = {face_attributes[1].shape}")
+        # # print(f"face_normals.shape = {face_normals.shape}")
 
         # ian: dibr_rasterization(height, width, faces_z, faces_xy, features, faces_normals)
         image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
@@ -308,8 +308,8 @@ def calculate_roots(origin_pos: torch.Tensor, length_x, lod):
 
     roots = ian_utils.torch_linspace(start_pos, end_pos, lod)
 
-    print(f"roots.shape = {roots.shape}")
-    print(f"roots = {roots}")
+    # # print(f"roots.shape = {roots.shape}")
+    # # print(f"roots = {roots}")
     
     return roots
 

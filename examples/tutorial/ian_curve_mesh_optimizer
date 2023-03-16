@@ -156,7 +156,7 @@ def visualize_results(curve_mesh_optimizer:CurveMeshOptimizer, lod_x, lod_y, dat
     with torch.no_grad():
         rendered_image, mask, soft_mask = curve_mesh_optimizer.render(lod_x=lod_x, lod_y=lod_y, data=data)
 
-    print(f"visualize_results: rendered_image.shape = {rendered_image.shape}")
+    # # print(f"visualize_results: rendered_image.shape = {rendered_image.shape}")
     pylab.imshow(rendered_image[0].cpu().detach())
     pylab.title(f'epoch: {epoch}')
     pylab.waitforbuttonpress(0)
