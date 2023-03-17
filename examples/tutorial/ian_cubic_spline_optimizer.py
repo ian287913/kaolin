@@ -62,7 +62,7 @@ class CubicSplineOptimizer:
         self.key_ys_optim.zero_grad()
         self.key_ts_optim.zero_grad()
     def calculate_ys_with_lod_x(self, lod_x):
-        sample_xs = torch.linspace(0, 1, lod_x, dtype=torch.float, device='cuda')
+        sample_xs = torch.linspace(0, 1, lod_x, dtype=torch.float, device='cuda', requires_grad=False)
         return self.calculate_ys(sample_xs)
     def calculate_ys(self, sample_xs):
         return ian_torch_cubic_spline_interp.interp_func_with_tangent(self.key_xs, self.key_ys, self.key_ts, sample_xs)
@@ -91,7 +91,7 @@ def train_spline():
     # parameters
     num_epoch = 100
     visualize_epoch_interval = 20
-    sample_size = 100
+    sample_size = 20
     key_size = 5
 
     spline_optimizer = CubicSplineOptimizer(
@@ -111,7 +111,14 @@ def train_spline():
             visualize_results(spline_optimizer, sample_xs, epoch)
 
         spline_optimizer.zero_grad()
-        ys = spline_optimizer.calculate_ys(sample_xs)
+        ###ys = spline_optimizer.calculate_ys(sample_xs)
+        ys = spline_optimizer.calculate_ys_with_lod_x(sample_size)
+        
+        # make dot
+        from torchviz import make_dot, make_dot_from_trace
+        ###g = make_dot(ys, dict(key_ys = spline_optimizer.key_ys, key_ts = spline_optimizer.key_ts, ys = ys))
+        g = make_dot(ys)
+        g.view()
 
         ### Compute Losses ###
         y_loss = torch.mean(torch.abs(gt_ys - ys))

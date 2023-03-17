@@ -36,6 +36,8 @@ class CurveMeshOptimizer:
                  origin_pos_lr = 5e-1, length_xyz_lr = 5e-1,
                  render_res = 512):
         
+        self.key_size = key_size
+
         # init curve
         self.spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
             key_size, 
@@ -80,6 +82,24 @@ class CurveMeshOptimizer:
         
     def render(self, lod_x, lod_y, data):
         
+        spline_optimizer_2 = ian_cubic_spline_optimizer.CubicSplineOptimizer(
+            self.key_size, 
+            y_weight=y_weight, 
+            y_lr=y_lr, 
+            t_lr=t_lr, 
+            scheduler_step_size=scheduler_step_size, 
+            scheduler_gamma=scheduler_gamma)
+
+        ## try to dump ys graph
+        calculated_ys = spline_optimizer_2.calculate_ys_with_lod_x(lod_x)
+        from torchviz import make_dot, make_dot_from_trace
+        g = make_dot(calculated_ys, dict(
+            key_ys = spline_optimizer_2.key_ys, 
+            key_ts = spline_optimizer_2.key_ts, 
+            calculated_ys = calculated_ys))
+        g.view()
+        
+
         self.body_mesh.set_mesh_by_samples(ian_renderer.calculate_roots(self.origin_pos, self.length_xyz, lod_x), self.spline_optimizer.calculate_ys_with_lod_x(lod_x), lod_y, 512)
 
         #render...
@@ -96,6 +116,7 @@ class CurveMeshOptimizer:
     
     def step(self):
         print(f"self.spline_optimizer.key_ys.grad = {self.spline_optimizer.key_ys.grad}")
+        print(f"self.origin_pos.grad = {self.origin_pos.grad}")
         self.spline_optimizer.step()
 
         self.length_xyz_optim.step()
@@ -145,6 +166,8 @@ def train_mesh():
         image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
         loss = (image_loss * image_weight)
 
+        
+        # dump graph
         if (epoch % visualize_epoch_interval == 0):
             from torchviz import make_dot, make_dot_from_trace
             g = make_dot(loss, dict(
@@ -156,6 +179,7 @@ def train_mesh():
                 texture_map = curve_mesh_optimizer.body_mesh.texture_map, 
                 output = loss))
             g.view()
+
 
         ### Update the parameters ###
         loss.backward()

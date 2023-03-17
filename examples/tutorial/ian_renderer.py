@@ -75,8 +75,12 @@ class Mesh:
         # for each column
         for idx, y in enumerate(ys):
             root_pos = roots[idx]
+            print(f"y.shape = {y.shape}")
+            expanded_y = y[None]
+            print(f"expanded_y.shape = {expanded_y.shape}")
+
             top_pos = roots[idx] + torch.tensor((0, y, 0), 
-                                   dtype=torch.float, device='cuda', requires_grad=False)
+                                   dtype=torch.float, device='cuda')
 
             new_vertices = ian_utils.torch_linspace(root_pos, top_pos, lod_y)
             # # print(f"new_vertices.shape = {new_vertices.shape}")
