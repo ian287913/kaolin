@@ -4,6 +4,7 @@ import glob
 import time
 
 import torch
+import torch.nn.functional as F
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider, Button, TextBox
@@ -70,12 +71,12 @@ class Mesh:
 
         # vertices
         self.vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda',
-                                requires_grad=True)
+                                requires_grad=False)
         # for each column
         for idx, y in enumerate(ys):
             root_pos = roots[idx]
             top_pos = roots[idx] + torch.tensor((0, y, 0), 
-                                   dtype=torch.float, device='cuda', requires_grad=True)
+                                   dtype=torch.float, device='cuda', requires_grad=False)
 
             new_vertices = ian_utils.torch_linspace(root_pos, top_pos, lod_y)
             # # print(f"new_vertices.shape = {new_vertices.shape}")
@@ -262,10 +263,10 @@ def re_render_with_ui_params(val):
     print(f"elev = {new_elev}, new_azim = {new_azim}, new_radius = {new_radius}, new_look_at_height = {new_look_at_height}, new_fovyangle = {new_fovyangle}, new_sigmainv = {new_sigmainv}")
 
     origin_pos = torch.tensor((-1, -1, 0), dtype=torch.float, device='cuda', requires_grad=True)
-    length_x = torch.tensor(2, dtype=torch.float, device='cuda', requires_grad=True)
+    length_xyz = torch.tensor((2, 0, 0), dtype=torch.float, device='cuda', requires_grad=True)
     lod = 20
     newMesh = Mesh(123)
-    newMesh.set_mesh_by_samples(calculate_roots(origin_pos, length_x, lod), calculate_groun_truth(lod), 4, 512)
+    newMesh.set_mesh_by_samples(calculate_roots(origin_pos, length_xyz, lod), calculate_groun_truth(lod), 4, 512)
     print(f"newMesh.vertices.shape = {newMesh.vertices.shape}")
     print(f"newMesh.vertices = \n{newMesh.vertices}")
 
@@ -302,9 +303,10 @@ def calculate_groun_truth(sample_size):
     
     return ian_torch_cubic_spline_interp.interp_func_with_tangent(gt_key_xs, gt_key_ys, gt_key_ts, sample_xs)
 
-def calculate_roots(origin_pos: torch.Tensor, length_x, lod):
+def calculate_roots(origin_pos: torch.Tensor, length_xyz: torch.Tensor, lod):
     start_pos = origin_pos
-    end_pos = origin_pos + torch.tensor((length_x, 0, 0), dtype=torch.float, device='cuda', requires_grad=True)
+    end_pos = origin_pos + length_xyz
+    ##end_pos = origin_pos + torch.tensor((length_x, 0, 0), dtype=torch.float, device='cuda', requires_grad=False)
 
     roots = ian_utils.torch_linspace(start_pos, end_pos, lod)
 

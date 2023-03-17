@@ -25,7 +25,7 @@ t_lr = 5
 scheduler_step_size = 20
 scheduler_gamma = 0.5
 origin_pos_lr = 5e-1
-length_x_lr = 5e-1
+length_xyz_lr = 5e-1
 render_res = 512
 
 ################################## Class Definition ##################################
@@ -33,7 +33,7 @@ render_res = 512
 class CurveMeshOptimizer:
     def __init__(self, 
                  key_size = 3, y_weight = 10, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5,
-                 origin_pos_lr = 5e-1, length_x_lr = 5e-1,
+                 origin_pos_lr = 5e-1, length_xyz_lr = 5e-1,
                  render_res = 512):
         
         # init curve
@@ -51,17 +51,17 @@ class CurveMeshOptimizer:
 
         # initialize leaves
         self.origin_pos = torch.tensor((-1, -1, 0), dtype=torch.float, device='cuda', requires_grad=True)
-        self.length_x = torch.tensor(2, dtype=torch.float, device='cuda', requires_grad=True)
+        self.length_xyz = torch.tensor((2, 0, 0), dtype=torch.float, device='cuda', requires_grad=True)
 
         # initialize optimizers and schedulers
         self.origin_pos_optim  = torch.optim.Adam(params=[self.origin_pos], lr = origin_pos_lr)
-        self.length_x_optim  = torch.optim.Adam(params=[self.length_x], lr = length_x_lr)
+        self.length_xyz_optim  = torch.optim.Adam(params=[self.length_xyz], lr = length_xyz_lr)
         self.origin_pos_scheduler = torch.optim.lr_scheduler.StepLR(
             self.origin_pos_optim,
             step_size=scheduler_step_size,
             gamma=scheduler_gamma)
-        self.length_x_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.length_x_optim,
+        self.length_xyz_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.length_xyz_optim,
             step_size=scheduler_step_size,
             gamma=scheduler_gamma)
     '''
@@ -75,12 +75,12 @@ class CurveMeshOptimizer:
     def zero_grad(self):
         self.spline_optimizer.zero_grad()
 
-        self.length_x_optim.zero_grad()
+        self.length_xyz_optim.zero_grad()
         self.origin_pos_optim.zero_grad()
         
     def render(self, lod_x, lod_y, data):
         
-        self.body_mesh.set_mesh_by_samples(ian_renderer.calculate_roots(self.origin_pos, self.length_x, lod_x), self.spline_optimizer.calculate_ys_with_lod_x(lod_x), lod_y, 512)
+        self.body_mesh.set_mesh_by_samples(ian_renderer.calculate_roots(self.origin_pos, self.length_xyz, lod_x), self.spline_optimizer.calculate_ys_with_lod_x(lod_x), lod_y, 512)
 
         #render...
         rendered_image, mask, soft_mask = self.renderer.render_image_and_mask_with_camera_params(
@@ -98,9 +98,9 @@ class CurveMeshOptimizer:
         print(f"self.spline_optimizer.key_ys.grad = {self.spline_optimizer.key_ys.grad}")
         self.spline_optimizer.step()
 
-        self.length_x_optim.step()
+        self.length_xyz_optim.step()
         self.origin_pos_optim.step()
-        self.length_x_scheduler.step()
+        self.length_xyz_scheduler.step()
         self.origin_pos_scheduler.step()
 
 ################################## Utils ##################################
@@ -119,7 +119,7 @@ def train_mesh():
     # get data
     train_data, dataloader = ian_utils.create_dataloader_with_single_view(rendered_path_single, 1)
     data = train_data[0]
-    gt_rgb = data['rgb'].cuda()
+    gt_rgb : torch.Tensor = data['rgb'].cuda()
     gt_alpha = data['alpha'].cuda()
 
     # init optimizer
@@ -131,7 +131,7 @@ def train_mesh():
         scheduler_step_size=scheduler_step_size, 
         scheduler_gamma=scheduler_gamma,
         origin_pos_lr=origin_pos_lr,
-        length_x_lr=length_x_lr,
+        length_xyz_lr=length_xyz_lr,
         render_res=gt_rgb.shape[0])
     
     
@@ -147,7 +147,14 @@ def train_mesh():
 
         if (epoch % visualize_epoch_interval == 0):
             from torchviz import make_dot, make_dot_from_trace
-            g = make_dot(loss)
+            g = make_dot(loss, dict(
+                length_xyz = curve_mesh_optimizer.length_xyz, 
+                origin_pos = curve_mesh_optimizer.origin_pos, 
+                key_ys = curve_mesh_optimizer.spline_optimizer.key_ys, 
+                key_ts = curve_mesh_optimizer.spline_optimizer.key_ts, 
+                vertices = curve_mesh_optimizer.body_mesh.vertices, 
+                texture_map = curve_mesh_optimizer.body_mesh.texture_map, 
+                output = loss))
             g.view()
 
         ### Update the parameters ###
