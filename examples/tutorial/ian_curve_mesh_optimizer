@@ -95,6 +95,7 @@ class CurveMeshOptimizer:
         return (rendered_image, mask, soft_mask)
     
     def step(self):
+        print(f"self.spline_optimizer.key_ys.grad = {self.spline_optimizer.key_ys.grad}")
         self.spline_optimizer.step()
 
         self.length_x_optim.step()
@@ -108,9 +109,9 @@ def train_mesh():
     # parameters
     rendered_path_single = "./resources/rendered_curved_mesh/"
     num_epoch = 100
-    visualize_epoch_interval = 10
+    visualize_epoch_interval = 20
     sample_size = 100
-    key_size = 3
+    key_size = 5
     lod_x = 20
     lod_y = 20
 
@@ -143,6 +144,12 @@ def train_mesh():
         ### Compute Losses ###
         image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
         loss = (image_loss * image_weight)
+
+        if (epoch % visualize_epoch_interval == 0):
+            from torchviz import make_dot, make_dot_from_trace
+            g = make_dot(loss)
+            g.view()
+
         ### Update the parameters ###
         loss.backward()
         curve_mesh_optimizer.step()
