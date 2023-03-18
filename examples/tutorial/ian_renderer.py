@@ -24,12 +24,13 @@ face_uvs_idx    (torch.LongTensor): of shape (num_faces, face_size)
 """
 class Mesh:
     def __init__(self, dummy):
-        # make a dummy mesh data
-        vertices = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]]
-        faces = [[0, 1, 2], [1, 3, 2]]
-        uvs = [[0, 0], [1, 0], [0, 1], [1, 1]]
-        face_uvs_idx = [[0, 1, 2], [1, 2, 3]]
-        self.set_mesh(vertices, faces, uvs, face_uvs_idx, 512)
+        print("mesh initialized")
+        # # make a dummy mesh data
+        # vertices = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]]
+        # faces = [[0, 1, 2], [1, 3, 2]]
+        # uvs = [[0, 0], [1, 0], [0, 1], [1, 1]]
+        # face_uvs_idx = [[0, 1, 2], [1, 2, 3]]
+        # self.set_mesh(vertices, faces, uvs, face_uvs_idx, 512)
 
     # from list to tensor
     def set_mesh(self, vertices:list, faces:list, uvs:list, face_uvs_idx:list, texture_res):
@@ -69,18 +70,24 @@ class Mesh:
         assert roots.shape[0] > 1, f'roots.shape[0] should greater than 1!'
         assert ys.shape[0] > 1, f'ys.shape[0] should greater than 1!'
 
+        unsqueezed_ys = ys.unsqueeze(1)
+        direction_x = torch.zeros(ys.shape[0], 
+                                  dtype=torch.float, device='cuda', requires_grad=False).unsqueeze(1)
+        direction_z = torch.zeros(ys.shape[0], 
+                                  dtype=torch.float, device='cuda', requires_grad=False).unsqueeze(1)
+        direction_xyz = torch.cat((direction_x, unsqueezed_ys, direction_z), 1)
+
         # vertices
         self.vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda',
-                                requires_grad=False)
+                                requires_grad=True)
         # for each column
         for idx, y in enumerate(ys):
             root_pos = roots[idx]
-            print(f"y.shape = {y.shape}")
-            expanded_y = y[None]
-            print(f"expanded_y.shape = {expanded_y.shape}")
-
-            top_pos = roots[idx] + torch.tensor((0, y, 0), 
-                                   dtype=torch.float, device='cuda')
+            # # print(f"y.shape = {y.shape}")
+            # # expanded_y = y[None]
+            # # print(f"expanded_y.shape = {expanded_y.shape}")
+            
+            top_pos = roots[idx] + direction_xyz[idx]
 
             new_vertices = ian_utils.torch_linspace(root_pos, top_pos, lod_y)
             # # print(f"new_vertices.shape = {new_vertices.shape}")
@@ -268,12 +275,43 @@ def re_render_with_ui_params(val):
 
     origin_pos = torch.tensor((-1, -1, 0), dtype=torch.float, device='cuda', requires_grad=True)
     length_xyz = torch.tensor((2, 0, 0), dtype=torch.float, device='cuda', requires_grad=True)
-    lod = 20
+    lod = 7
+
+    # roots = calculate_roots(origin_pos, length_xyz, lod)
+    # from torchviz import make_dot, make_dot_from_trace
+    # g = make_dot(roots, dict(
+    #     origin_pos = origin_pos, 
+    #     length_xyz = length_xyz, 
+    #     roots = roots),
+    #     True, True)
+    # g.view()
+
+    # gt = calculate_groun_truth(lod)
+    # from torchviz import make_dot, make_dot_from_trace
+    # g = make_dot(gt, dict(
+    #     origin_pos = origin_pos, 
+    #     length_xyz = length_xyz, 
+    #     gt_key_ys = gt_key_ys,
+    #     gt_key_ts = gt_key_ts,
+    #     gt = gt),
+    #     True, True)
+    # g.view()
+
     newMesh = Mesh(123)
     newMesh.set_mesh_by_samples(calculate_roots(origin_pos, length_xyz, lod), calculate_groun_truth(lod), 4, 512)
     print(f"newMesh.vertices.shape = {newMesh.vertices.shape}")
     print(f"newMesh.vertices = \n{newMesh.vertices}")
-
+    
+    # # dump graph
+    # from torchviz import make_dot, make_dot_from_trace
+    # g = make_dot(newMesh.vertices, dict(
+    #     origin_pos = origin_pos, 
+    #     length_xyz = length_xyz, 
+    #     gt_key_ys = gt_key_ys,
+    #     gt_key_ts = gt_key_ts,
+    #     vertices = newMesh.vertices),
+    #     True, True)
+    # g.view()
 
     newRenderer = Renderer('cuda', 1)
 
@@ -300,7 +338,9 @@ def re_render_with_ui_params(val):
 gt_key_size = 3
 gt_key_xs = torch.as_tensor(np.array([0, 0.5, 1]), dtype=torch.float, device='cuda')
 gt_key_ys = torch.as_tensor(np.array([2, 1, 3]), dtype=torch.float, device='cuda')
+gt_key_ys.requires_grad = True
 gt_key_ts = torch.as_tensor(np.array([10, -2, -1]), dtype=torch.float, device='cuda')
+gt_key_ts.requires_grad = True
 
 def calculate_groun_truth(sample_size):
     sample_xs = torch.linspace(0, 1, sample_size, dtype=torch.float, device='cuda')
@@ -323,6 +363,8 @@ def calculate_roots(origin_pos: torch.Tensor, length_xyz: torch.Tensor, lod):
 root_path: Path = Path('./renderer_output/')
 output_path : Path
 def main():
+
+    
     global root_path
     global output_path
 

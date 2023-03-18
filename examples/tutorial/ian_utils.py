@@ -81,7 +81,7 @@ def torch_linspace(start: torch.Tensor, stop: torch.Tensor, num: int):
     Replicates but the multi-dimensional bahaviour of numpy.linspace in PyTorch.
     """
     # create a tensor of 'num' steps from 0 to 1
-    steps = torch.arange(num, dtype=torch.float32, device=start.device) / (num - 1)
+    steps = torch.arange(num, dtype=torch.float32, device=start.device, requires_grad=False) / (num - 1)
     
     # reshape the 'steps' tensor to [-1, *([1]*start.ndim)] to allow for broadcastings
     # - using 'steps.reshape([-1, *([1]*start.ndim)])' would be nice here but torchscript

@@ -113,22 +113,16 @@ def train_spline():
         spline_optimizer.zero_grad()
         ###ys = spline_optimizer.calculate_ys(sample_xs)
         ys = spline_optimizer.calculate_ys_with_lod_x(sample_size)
-        
-        # make dot
-        from torchviz import make_dot, make_dot_from_trace
-        ###g = make_dot(ys, dict(key_ys = spline_optimizer.key_ys, key_ts = spline_optimizer.key_ts, ys = ys))
-        g = make_dot(ys)
-        g.view()
 
         ### Compute Losses ###
         y_loss = torch.mean(torch.abs(gt_ys - ys))
         loss = (y_loss * y_weight)
 
-        # make dot
-        if (epoch % visualize_epoch_interval == 0):
-            from torchviz import make_dot, make_dot_from_trace
-            g = make_dot(loss, dict(key_ys = spline_optimizer.key_ys, key_ts = spline_optimizer.key_ts, output = loss))
-            g.view()
+        # # make dot
+        # if (epoch % visualize_epoch_interval == 0):
+        #     from torchviz import make_dot
+        #     g = make_dot(loss, dict(key_ys = spline_optimizer.key_ys, key_ts = spline_optimizer.key_ts, y_loss = y_loss, output = loss))
+        #     g.view()
 
         ### Update the parameters ###
         loss.backward()

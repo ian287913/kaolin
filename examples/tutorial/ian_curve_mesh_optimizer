@@ -82,23 +82,13 @@ class CurveMeshOptimizer:
         
     def render(self, lod_x, lod_y, data):
         
-        spline_optimizer_2 = ian_cubic_spline_optimizer.CubicSplineOptimizer(
-            self.key_size, 
-            y_weight=y_weight, 
-            y_lr=y_lr, 
-            t_lr=t_lr, 
-            scheduler_step_size=scheduler_step_size, 
-            scheduler_gamma=scheduler_gamma)
-
-        ## try to dump ys graph
-        calculated_ys = spline_optimizer_2.calculate_ys_with_lod_x(lod_x)
-        from torchviz import make_dot, make_dot_from_trace
-        g = make_dot(calculated_ys, dict(
-            key_ys = spline_optimizer_2.key_ys, 
-            key_ts = spline_optimizer_2.key_ts, 
-            calculated_ys = calculated_ys))
-        g.view()
-        
+        # calculated_ys = self.spline_optimizer.calculate_ys_with_lod_x(lod_x)
+        # from torchviz import make_dot, make_dot_from_trace
+        # g = make_dot(calculated_ys, dict(
+        #     key_ys = self.spline_optimizer.key_ys, 
+        #     key_ts = self.spline_optimizer.key_ts, 
+        #     calculated_ys = calculated_ys))
+        # g.view()
 
         self.body_mesh.set_mesh_by_samples(ian_renderer.calculate_roots(self.origin_pos, self.length_xyz, lod_x), self.spline_optimizer.calculate_ys_with_lod_x(lod_x), lod_y, 512)
 
@@ -116,7 +106,11 @@ class CurveMeshOptimizer:
     
     def step(self):
         print(f"self.spline_optimizer.key_ys.grad = {self.spline_optimizer.key_ys.grad}")
+        print(f"self.spline_optimizer.key_ts.grad = {self.spline_optimizer.key_ts.grad}")
         print(f"self.origin_pos.grad = {self.origin_pos.grad}")
+        print(f"self.length_xyz.grad = {self.length_xyz.grad}")
+        print(f"self.body_mesh.texture_map.grad = {self.body_mesh.texture_map.grad}")
+        print(f"self.body_mesh.vertices.grad = {self.body_mesh.vertices.grad}")
         self.spline_optimizer.step()
 
         self.length_xyz_optim.step()
@@ -166,7 +160,8 @@ def train_mesh():
         image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
         loss = (image_loss * image_weight)
 
-        
+        print(f"loss.grad_fn = {loss.grad_fn}")
+
         # dump graph
         if (epoch % visualize_epoch_interval == 0):
             from torchviz import make_dot, make_dot_from_trace
@@ -180,10 +175,10 @@ def train_mesh():
                 output = loss))
             g.view()
 
-
         ### Update the parameters ###
         loss.backward()
         curve_mesh_optimizer.step()
+
 
         print(f"Epoch {epoch} - loss: {float(loss)}")
 
