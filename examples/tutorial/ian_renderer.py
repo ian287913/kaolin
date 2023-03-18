@@ -22,7 +22,7 @@ faces           (torch.LongTensor): of shape (num_faces, face_size)
 uvs             (torch.Tensor):     of shape (num_uvs, 2)
 face_uvs_idx    (torch.LongTensor): of shape (num_faces, face_size)
 """
-class Mesh:
+class SplineMesh:
     def __init__(self, dummy):
         print("mesh initialized")
         # # make a dummy mesh data
@@ -145,13 +145,13 @@ class Renderer:
         self.background = torch.ones(render_res).to(device).float()
 
 
-    def render_image_and_mask_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, mesh:Mesh, sigmainv = 7000):
+    def render_image_and_mask_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, mesh:SplineMesh, sigmainv = 7000):
         cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
         cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
         # render image and mask
         return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh, sigmainv)
 
-    def render_image_and_mask(self, cam_proj, cam_transform, height, width, mesh:Mesh, sigmainv = 7000):
+    def render_image_and_mask(self, cam_proj, cam_transform, height, width, mesh:SplineMesh, sigmainv = 7000):
 
         ### Prepare mesh data with projection regarding to camera ###
         face_vertices_camera, face_vertices_image, face_normals = \
@@ -297,7 +297,7 @@ def re_render_with_ui_params(val):
     #     True, True)
     # g.view()
 
-    newMesh = Mesh(123)
+    newMesh = SplineMesh(123)
     newMesh.set_mesh_by_samples(calculate_roots(origin_pos, length_xyz, lod), calculate_groun_truth(lod), 4, 512)
     print(f"newMesh.vertices.shape = {newMesh.vertices.shape}")
     print(f"newMesh.vertices = \n{newMesh.vertices}")
