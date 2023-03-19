@@ -108,12 +108,12 @@ class CurveMeshOptimizer:
         return (rendered_image, mask, soft_mask)
     
     def step(self):
-        print(f"self.spline_optimizer.key_ys.grad = {self.spline_optimizer.key_ys.grad}")
-        print(f"self.spline_optimizer.key_ts.grad = {self.spline_optimizer.key_ts.grad}")
-        print(f"self.origin_pos.grad = {self.origin_pos.grad}")
-        print(f"self.length_xyz.grad = {self.length_xyz.grad}")
-        print(f"self.body_mesh.texture_map.grad = {self.body_mesh.texture_map.grad}")
-        print(f"self.body_mesh.vertices.grad = {self.body_mesh.vertices.grad}")
+        # print(f"self.spline_optimizer.key_ys.grad = {self.spline_optimizer.key_ys.grad}")
+        # print(f"self.spline_optimizer.key_ts.grad = {self.spline_optimizer.key_ts.grad}")
+        # print(f"self.origin_pos.grad = {self.origin_pos.grad}")
+        # print(f"self.length_xyz.grad = {self.length_xyz.grad}")
+        # print(f"self.body_mesh.texture_map.grad = {self.body_mesh.texture_map.grad}")
+        # print(f"self.body_mesh.vertices.grad = {self.body_mesh.vertices.grad}")
         self.spline_optimizer.step()
 
         self.length_xyz_optim.step()
@@ -166,7 +166,6 @@ def train_mesh():
         
         loss = (image_loss * image_weight + alpha_loss * alpha_weight)
 
-        print(f"loss.grad_fn = {loss.grad_fn}")
 
         # # dump graph
         # if (epoch % visualize_epoch_interval == 0):
@@ -183,11 +182,7 @@ def train_mesh():
 
         ### Update the parameters ###
         loss.backward()
-
-        print(f"image_loss.grad = {image_loss.grad}")
-
         curve_mesh_optimizer.step()
-
 
         print(f"Epoch {epoch} - loss: {float(loss)}")
 
