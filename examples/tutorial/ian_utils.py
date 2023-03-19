@@ -128,6 +128,15 @@ def import_alpha(path: Path):
         print(f"failed to load alpha: file {path} does not exist.")
         return None
 
+def import_body_mask(path: Path):
+    if os.path.exists(path):
+        return torch.from_numpy(
+            np.array(Image.open(path))
+        )[:, :, :3].float() / 255.
+    else:
+        print(f"failed to load body_mask: file {path} does not exist.")
+        return None
+
 def load_rendered_png_and_camera_data(root_dir: Path, data_idx: int = 0):
     # resolution follows 'rgb'
     output = {}
@@ -137,6 +146,9 @@ def load_rendered_png_and_camera_data(root_dir: Path, data_idx: int = 0):
     alpha = import_alpha(os.path.join(root_dir, f'{data_idx}_alpha.png'))
     if (alpha is not None):
         output['alpha'] = alpha
+    body_mask = import_body_mask(os.path.join(root_dir, f'{data_idx}_body_mask.png'))
+    if (body_mask is not None):
+        output['body_mask'] = body_mask
 
     with open(os.path.join(root_dir, f'{data_idx}_metadata.json'), 'r') as f:
         fmetadata = json.load(f)

@@ -125,7 +125,7 @@ class CurveMeshOptimizer:
 
 def train_mesh():
     # parameters
-    rendered_path_single = "./resources/rendered_curved_mesh/"
+    rendered_path_single = "./resources/rendered_goldfish/"
     num_epoch = 100
     visualize_epoch_interval = 20
     sample_size = 100
@@ -139,6 +139,7 @@ def train_mesh():
     data = train_data[0]
     gt_rgb : torch.Tensor = data['rgb'].cuda()
     gt_alpha : torch.Tensor = data['alpha'].cuda()
+    gt_body_mask : torch.Tensor = data['body_mask'].cuda()
 
     # init optimizer
     curve_mesh_optimizer = CurveMeshOptimizer(
@@ -160,9 +161,11 @@ def train_mesh():
         curve_mesh_optimizer.zero_grad()
         curve_mesh_optimizer.body_mesh.texture_map.requires_grad = False
         rendered_image, mask, soft_mask = curve_mesh_optimizer.render(lod_x=lod_x, lod_y=lod_y, data=data)
+
         ### Compute Losses ###
         image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
-        alpha_loss = torch.mean(torch.abs(soft_mask - gt_alpha))
+
+        alpha_loss = torch.mean(torch.abs(soft_mask - gt_body_mask[:,:,0]))
         
         loss = (image_loss * image_weight + alpha_loss * alpha_weight)
 
