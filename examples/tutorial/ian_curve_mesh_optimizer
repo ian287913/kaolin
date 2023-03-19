@@ -156,7 +156,6 @@ def train_mesh():
             visualize_results(curve_mesh_optimizer, lod_x, lod_y, data, epoch)
 
         curve_mesh_optimizer.zero_grad()
-        curve_mesh_optimizer.body_mesh.texture_map.requires_grad = False
         rendered_image, mask, soft_mask = curve_mesh_optimizer.render(lod_x=lod_x, lod_y=lod_y, data=data)
 
         ### Compute Losses ###

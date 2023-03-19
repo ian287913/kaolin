@@ -66,6 +66,12 @@ class CubicSplineOptimizer:
     def calculate_ys(self, sample_xs):
         return ian_torch_cubic_spline_interp.interp_func_with_tangent(self.key_xs, self.key_ys, self.key_ts, sample_xs)
     
+    def calculate_negative_ys_loss(self, lod_x):
+        ys = self.calculate_ys_with_lod_x(lod_x)
+        loss = torch.exp(-ys)
+        return torch.mean(loss)
+
+
     def step(self):
         # # try to print grad
         # print(f"self.key_ys_optim.param_groups = {self.key_ys_optim.param_groups}")

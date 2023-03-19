@@ -145,13 +145,15 @@ class Renderer:
         self.background = torch.ones(render_res).to(device).float()
 
 
-    def render_image_and_mask_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, mesh:SplineMesh, sigmainv = 7000):
+    def render_image_and_mask_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, mesh, sigmainv = 7000, texture_map = None):
         cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
         cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
+        if (texture_map == None):
+            texture_map = mesh.texture_map 
         # render image and mask
-        return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh, sigmainv)
+        return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh, sigmainv, texture_map)
 
-    def render_image_and_mask(self, cam_proj, cam_transform, height, width, mesh:SplineMesh, sigmainv = 7000):
+    def render_image_and_mask(self, cam_proj, cam_transform, height, width, mesh, sigmainv = 7000, texture_map = None):
 
         ### Prepare mesh data with projection regarding to camera ###
         face_vertices_camera, face_vertices_image, face_normals = \
@@ -173,11 +175,11 @@ class Renderer:
             torch.ones((self.batch_size, mesh.faces.shape[0], 3, 1), device='cuda')
         ]
 
-        # # print(f"face_vertices_camera.shape = {face_vertices_camera.shape}")
-        # # print(f"face_vertices_image.shape = {face_vertices_image.shape}")
-        # # print(f"face_attributes[0].shape = {face_attributes[0].shape}")
-        # # print(f"face_attributes[1].shape = {face_attributes[1].shape}")
-        # # print(f"face_normals.shape = {face_normals.shape}")
+        # print(f"\n\nface_vertices_camera.shape = {face_vertices_camera.shape}")
+        # print(f"face_vertices_image.shape = {face_vertices_image.shape}")
+        # print(f"face_attributes[0].shape = {face_attributes[0].shape}")
+        # print(f"face_attributes[1].shape = {face_attributes[1].shape}")
+        # print(f"face_normals.shape = {face_normals.shape}")
 
         # ian: dibr_rasterization(height, width, faces_z, faces_xy, features, faces_normals)
         image_features, soft_mask, face_idx = kal.render.mesh.dibr_rasterization(
@@ -189,7 +191,7 @@ class Renderer:
         # image_features is a tuple in composed of the interpolated attributes of face_attributes
         texture_coords, mask = image_features
         image = kal.render.mesh.texture_mapping(texture_coords,
-                                                mesh.texture_map.repeat(self.batch_size, 1, 1, 1), 
+                                                texture_map.repeat(self.batch_size, 1, 1, 1), 
                                                 mode=self.interpolation_mode)
         image = torch.clamp(image * mask, 0., 1.)
 
