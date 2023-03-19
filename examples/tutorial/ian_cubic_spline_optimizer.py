@@ -24,9 +24,8 @@ scheduler_gamma = 0.5
 ################################## Class Definition ##################################
 
 class CubicSplineOptimizer:
-    def __init__(self, key_size = 3, y_weight = 10, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5):
+    def __init__(self, key_size = 3, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5):
         # Hyperparameters
-        self.y_weight = y_weight
         self.y_lr = y_lr
         self.t_lr = t_lr
         self.scheduler_step_size = scheduler_step_size
@@ -96,7 +95,6 @@ def train_spline():
 
     spline_optimizer = CubicSplineOptimizer(
         key_size, 
-        y_weight=y_weight, 
         y_lr=y_lr, 
         t_lr=t_lr, 
         scheduler_step_size=scheduler_step_size, 

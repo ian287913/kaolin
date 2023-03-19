@@ -19,7 +19,6 @@ import ian_utils
 # Hyperparameters
 image_weight = 100
 alpha_weight = 100
-y_weight = 100
 y_lr = 5e-1
 t_lr = 5e-1
 scheduler_step_size = 20
@@ -32,7 +31,7 @@ render_res = 512
 
 class CurveMeshOptimizer:
     def __init__(self, 
-                 key_size = 3, y_weight = 10, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5,
+                 key_size = 3, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5,
                  origin_pos_lr = 5e-1, length_xyz_lr = 5e-1,
                  render_res = 512):
         
@@ -41,7 +40,6 @@ class CurveMeshOptimizer:
         # init curve
         self.spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
             key_size, 
-            y_weight=y_weight, 
             y_lr=y_lr, 
             t_lr=t_lr, 
             scheduler_step_size=scheduler_step_size, 
@@ -144,7 +142,6 @@ def train_mesh():
     # init optimizer
     curve_mesh_optimizer = CurveMeshOptimizer(
         key_size, 
-        y_weight=y_weight, 
         y_lr=y_lr, 
         t_lr=t_lr, 
         scheduler_step_size=scheduler_step_size, 
