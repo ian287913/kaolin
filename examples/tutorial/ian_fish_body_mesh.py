@@ -60,7 +60,7 @@ class FishBodyMesh:
         # init mesh
 
         # initialize leaves
-        self.origin_xy = torch.tensor((-1, -1), dtype=torch.float, device='cuda', requires_grad=True)
+        self.origin_xy = torch.tensor((-1, 0), dtype=torch.float, device='cuda', requires_grad=True)
         self.origin_z = torch.tensor((0), dtype=torch.float, device='cuda', requires_grad=False)
         ##self.origin_pos = torch.cat((self.origin_xy, self.origin_z.unsqueeze(0)), 0)
 
@@ -162,7 +162,16 @@ class FishBodyMesh:
 
         # uvs
         # TODO: set uvs according to the lod_y and column idx
-        self.uvs = torch.zeros((self.vertices.shape[1], 2), dtype=torch.float, device='cuda', requires_grad=False)
+        ##self.uvs = torch.zeros((self.vertices.shape[1], 2), dtype=torch.float, device='cuda', requires_grad=False)
+        self.uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda',
+                                requires_grad=False)
+        # for each column
+        for idx, root in enumerate(roots):
+            column_u = float(idx) / float(roots.shape[0]-1)
+            top_uv = torch.Tensor([column_u, 1.0])
+            bottom_uv = torch.Tensor([column_u, 0.0])
+            new_uvs = ian_utils.torch_linspace(bottom_uv, top_uv, lod_y).cuda()
+            self.uvs = torch.cat((self.uvs, new_uvs), 0)
         self.uvs = self.uvs.cuda().unsqueeze(0)
 
         # face_uvs_idx
@@ -189,7 +198,7 @@ def train_mesh():
     length_xyz_lr = 5e-2
     render_res = 512
     texture_res = 512
-    sigmainv = 14000 # 3000~30000
+    sigmainv = 14000 # 3000~30000, for soft mask, higher sharper
 
     spline_start_train_epoch = 0
 
@@ -202,8 +211,12 @@ def train_mesh():
     lod_y = 20
 
     # texture map
+    # imported_texture_map = ian_utils.import_rgb(os.path.join(rendered_path_single, f'{0}_texture.png'))
+    # texture_map = imported_texture_map.permute(2, 0, 1).unsqueeze(0).cuda()
+    # texture_map.requires_grad = False
     texture_map = torch.ones((1, 3, texture_res, texture_res), dtype=torch.float, device='cuda',
-                            requires_grad=True)
+                            requires_grad=False)
+    
 
     # get ground truth
     # get data
@@ -317,17 +330,5 @@ def visualize_results(fish_body_mesh:FishBodyMesh, renderer:ian_renderer.Rendere
     ##pylab.savefig(f"./optimization record/{epoch}.png")
     ##pylab.close()
 
-
-def calculate_negative_ys_loss(ys, lod_x):
-        loss = torch.exp(-ys)
-        return loss
-def test_negative_loss():
-    lod_x = 5
-    ys = torch.tensor([-2, -1, 0, 1, 2], dtype=torch.float, device='cuda', requires_grad=True)
-    loss = calculate_negative_ys_loss(ys, lod_x)
-    print(f"loss = {loss}")
-
 if __name__ == "__main__":
-    test_negative_loss()
-
     train_mesh()
