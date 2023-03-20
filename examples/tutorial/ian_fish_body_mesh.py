@@ -223,7 +223,7 @@ def train_mesh():
     spline_start_train_epoch = 0
 
     # parameters
-    rendered_path_single = "./resources/rendered_goldfish/"
+    rendered_path_single = "./resources/rendered_mojarra/"
     num_epoch = 200
     visualize_epoch_interval = 10
     key_size = 20
