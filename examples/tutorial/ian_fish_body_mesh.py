@@ -58,6 +58,9 @@ class FishBodyMesh:
             scheduler_gamma=scheduler_gamma)
         
         # init mesh
+        self.lod_x = None
+        self.lod_y = None
+        self.vertices = None
 
         # initialize leaves
         self.origin_xy = torch.tensor((-1, 0), dtype=torch.float, device='cuda', requires_grad=True)
@@ -98,7 +101,30 @@ class FishBodyMesh:
         self.length_xyz_scheduler.step()
         self.origin_pos_scheduler.step()
 
+    def get_positions_by_uv(self, uv):
+        assert self.vertices is not None, f'self.vertices should be set before calling get_positions_by_uvs()!'
+        lod_uv = torch.mul(uv, torch.tensor(self.lod_x, self.lod_y))
+
+        floor_u = torch.floor(lod_uv[0])
+        ceil_u = torch.ceil(lod_uv[0])
+        offset_u = lod_uv[0] - floor_u
+        floor_v = torch.floor(lod_uv[1])
+        ceil_v = torch.ceil(lod_uv[1])
+        offset_v = lod_uv[1] - floor_v
+        
+        bottom_left = self.vertices[floor_u * self.lod_y + floor_v] 
+        top_left = self.vertices[floor_u * self.lod_y + ceil_v] 
+        bottom_right = self.vertices[ceil_u * self.lod_y + floor_v] 
+        top_right = self.vertices[ceil_u * self.lod_y + ceil_v] 
+        
+        left = torch.lerp(bottom_left, top_left, offset_v)
+        right = torch.lerp(bottom_right, top_right, offset_v)
+        
+        return torch.lerp(left, right, offset_u)
+        
     def update_mesh(self, lod_x, lod_y):
+        self.lod_x = lod_x
+        self.lod_y = lod_y
         self.origin_pos = torch.cat((self.origin_xy, self.origin_z.unsqueeze(0)), 0)
         self.length_xyz = torch.cat((self.length_x.unsqueeze(0), self.length_y.unsqueeze(0), self.length_z.unsqueeze(0)), 0)
 
@@ -156,13 +182,7 @@ class FishBodyMesh:
                 self.faces[tri_idx] = self.faces[tri_idx] + 1
                 self.faces[tri_idx + 1] = self.faces[tri_idx + 1] + 1
 
-        # # print(f"self.faces.shape = {self.faces.shape}")
-        # # print(f"self.faces = \n{self.faces}")
-        
-
         # uvs
-        # TODO: set uvs according to the lod_y and column idx
-        ##self.uvs = torch.zeros((self.vertices.shape[1], 2), dtype=torch.float, device='cuda', requires_grad=False)
         self.uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda',
                                 requires_grad=False)
         # for each column
