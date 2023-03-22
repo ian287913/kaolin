@@ -105,24 +105,25 @@ class FishBodyMesh:
         pos_xyzs = torch.zeros((0, 3), dtype=torch.float, device='cuda',
                                 requires_grad=True)
         for uv in uvs:
-            new_pos_xyz = self.get_positions_by_uv(uv)
+            new_pos_xyz = self.get_position_by_uv(uv).unsqueeze(0)
             pos_xyzs = torch.cat((pos_xyzs, new_pos_xyz), 0)
+        return pos_xyzs
 
-    def get_positions_by_uv(self, uv):
+    def get_position_by_uv(self, uv):
         assert self.vertices is not None, f'self.vertices should be set before calling get_positions_by_uvs()!'
-        lod_uv = torch.mul(uv, torch.tensor(self.lod_x, self.lod_y))
+        lod_uv = torch.mul(uv, torch.tensor((self.lod_x - 1, self.lod_y - 1), dtype=torch.float, device='cuda', requires_grad=False))
 
-        floor_u = torch.floor(lod_uv[0])
-        ceil_u = torch.ceil(lod_uv[0])
+        floor_u = torch.floor(lod_uv[0]).long()
+        ceil_u = torch.ceil(lod_uv[0]).long()
         offset_u = lod_uv[0] - floor_u
-        floor_v = torch.floor(lod_uv[1])
-        ceil_v = torch.ceil(lod_uv[1])
+        floor_v = torch.floor(lod_uv[1]).long()
+        ceil_v = torch.ceil(lod_uv[1]).long()
         offset_v = lod_uv[1] - floor_v
         
-        bottom_left = self.vertices[floor_u * self.lod_y + floor_v] 
-        top_left = self.vertices[floor_u * self.lod_y + ceil_v] 
-        bottom_right = self.vertices[ceil_u * self.lod_y + floor_v] 
-        top_right = self.vertices[ceil_u * self.lod_y + ceil_v] 
+        bottom_left = self.vertices[0][floor_u * self.lod_y + floor_v] 
+        top_left = self.vertices[0][floor_u * self.lod_y + ceil_v] 
+        bottom_right = self.vertices[0][ceil_u * self.lod_y + floor_v] 
+        top_right = self.vertices[0][ceil_u * self.lod_y + ceil_v] 
         
         left = torch.lerp(bottom_left, top_left, offset_v)
         right = torch.lerp(bottom_right, top_right, offset_v)

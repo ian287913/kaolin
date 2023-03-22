@@ -128,7 +128,7 @@ def import_alpha(path: Path):
         print(f"failed to load alpha: file {path} does not exist.")
         return None
 
-def import_body_mask(path: Path):
+def import_segment_mask(path: Path):
     if os.path.exists(path):
         return torch.from_numpy(
             np.array(Image.open(path))
@@ -146,9 +146,12 @@ def load_rendered_png_and_camera_data(root_dir: Path, data_idx: int = 0):
     alpha = import_alpha(os.path.join(root_dir, f'{data_idx}_alpha.png'))
     if (alpha is not None):
         output['alpha'] = alpha
-    body_mask = import_body_mask(os.path.join(root_dir, f'{data_idx}_body_mask.png'))
+    body_mask = import_segment_mask(os.path.join(root_dir, f'{data_idx}_body_mask.png'))
     if (body_mask is not None):
         output['body_mask'] = body_mask
+    dorsal_fin_mask = import_segment_mask(os.path.join(root_dir, f'{data_idx}_dorsal_fin_mask.png'))
+    if (dorsal_fin_mask is not None):
+        output['dorsal_fin_mask'] = dorsal_fin_mask
 
     with open(os.path.join(root_dir, f'{data_idx}_metadata.json'), 'r') as f:
         fmetadata = json.load(f)

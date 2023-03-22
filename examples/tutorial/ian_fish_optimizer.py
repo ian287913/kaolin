@@ -71,6 +71,10 @@ def train_mesh():
     gt_rgb : torch.Tensor = data['rgb'].cuda()
     gt_alpha : torch.Tensor = data['alpha'].cuda()
     gt_body_mask : torch.Tensor = data['body_mask'].cuda()
+    if 'dorsal_fin_mask' in data :
+        gt_dorsal_fin_mask : torch.Tensor = data['dorsal_fin_mask'].cuda()
+    else:
+        gt_dorsal_fin_mask : torch.Tensor = None
 
     render_res = gt_rgb.shape[0]
 
@@ -93,7 +97,8 @@ def train_mesh():
         scheduler_step_size=scheduler_step_size, 
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
-        dir_lr=fin_dir_lr)
+        dir_lr=fin_dir_lr,
+        start_uv=[0.5, 0.5])
     
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
@@ -103,11 +108,13 @@ def train_mesh():
 
         if (epoch % visualize_epoch_interval == 0):
             fish_body_mesh.update_mesh(lod_x, lod_y)
-            visualize_results(fish_body_mesh, None, renderer, texture_map, data, epoch)
+            fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+            visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch)
 
         fish_body_mesh.zero_grad()
 
         fish_body_mesh.update_mesh(lod_x, lod_y)
+        fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
         rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
             elev = data['metadata']['cam_elev'], 
             azim = data['metadata']['cam_azim'], 
@@ -152,7 +159,8 @@ def train_mesh():
         print(f"Epoch {epoch} - loss: {float(loss)}")
 
     fish_body_mesh.update_mesh(lod_x, lod_y)
-    visualize_results(fish_body_mesh, None, renderer, texture_map, data, epoch)
+    fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+    visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch)
 
 
 def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, renderer:ian_renderer.Renderer, texture_map, data, epoch = 0):
