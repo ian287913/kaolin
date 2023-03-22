@@ -23,8 +23,8 @@ import ian_fish_body_mesh
 
 
 """
-[FishBodyMesh]
-generate the mesh of body with trainable parameters:
+[FishFinMesh]
+generate the mesh of fin on top of a body with trainable parameters:
     silhouette spline,
     start uv,
     end uv,
@@ -108,6 +108,7 @@ class FishFinMesh:
     def update_mesh(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, lod_x, lod_y):
         root_uvs = ian_utils.torch_linspace(self.start_uv, self.end_uv, lod_x)
         root_xyzs = body_mesh.get_positions_by_uvs(root_uvs)
+
         self.set_mesh_by_samples(
             root_xyzs, 
             self.sil_spline_optimizer.calculate_ys_with_lod_x(lod_x),

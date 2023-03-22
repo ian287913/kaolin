@@ -101,6 +101,13 @@ class FishBodyMesh:
         self.length_xyz_scheduler.step()
         self.origin_pos_scheduler.step()
 
+    def get_positions_by_uvs(self, uvs):
+        pos_xyzs = torch.zeros((0, 3), dtype=torch.float, device='cuda',
+                                requires_grad=True)
+        for uv in uvs:
+            new_pos_xyz = self.get_positions_by_uv(uv)
+            pos_xyzs = torch.cat((pos_xyzs, new_pos_xyz), 0)
+
     def get_positions_by_uv(self, uv):
         assert self.vertices is not None, f'self.vertices should be set before calling get_positions_by_uvs()!'
         lod_uv = torch.mul(uv, torch.tensor(self.lod_x, self.lod_y))
