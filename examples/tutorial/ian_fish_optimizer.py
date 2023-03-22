@@ -42,14 +42,16 @@ def train_mesh():
     spline_start_train_epoch = 0
 
     # fin
-    fin_uv_lr = 5e-2
-    fin_dir_lr = 5e-2
+    fin_uv_lr = 0
+    fin_dir_lr = 0
+    # fin_uv_lr = 5e-2
+    # fin_dir_lr = 5e-2
     fin_start_train_epoch = 200
 
 
     # parameters
-    rendered_path_single = "./resources/rendered_mojarra/"
-    num_epoch = 200
+    rendered_path_single = "./resources/rendered_goldfish/"
+    num_epoch = 300
     visualize_epoch_interval = 10
     key_size = 20
     lod_x = 40
@@ -98,7 +100,7 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0.5, 0.5])
+        start_uv=[0, 1])
     
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
@@ -111,50 +113,92 @@ def train_mesh():
             fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
             visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch)
 
-        fish_body_mesh.zero_grad()
 
-        fish_body_mesh.update_mesh(lod_x, lod_y)
-        fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
-        rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
-            elev = data['metadata']['cam_elev'], 
-            azim = data['metadata']['cam_azim'], 
-            r = data['metadata']['cam_radius'], 
-            look_at_height = data['metadata']['cam_look_at_height'], 
-            fovyangle = data['metadata']['cam_fovyangle'],
-            mesh = fish_body_mesh,
-            sigmainv = data['metadata']['sigmainv'],
-            texture_map=texture_map)
+        if (epoch <= fin_start_train_epoch):
+            fish_body_mesh.zero_grad()
+            fish_body_mesh.update_mesh(lod_x, lod_y)
+            rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
+                elev = data['metadata']['cam_elev'], 
+                azim = data['metadata']['cam_azim'], 
+                r = data['metadata']['cam_radius'], 
+                look_at_height = data['metadata']['cam_look_at_height'], 
+                fovyangle = data['metadata']['cam_fovyangle'],
+                mesh = fish_body_mesh,
+                sigmainv = data['metadata']['sigmainv'],
+                texture_map=texture_map)
 
-        ### Compute Losses ###
-        image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
+            ### Compute Losses ###
+            image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
 
-        alpha_loss = torch.mean(torch.abs(soft_mask - gt_body_mask[:,:,0]))
+            alpha_loss = torch.mean(torch.abs(soft_mask - gt_body_mask[:,:,0]))
 
-        top_spline_negative_ys_loss = fish_body_mesh.top_spline_optimizer.calculate_negative_ys_loss(lod_x)
-        bottom_spline_negative_ys_loss = fish_body_mesh.bottom_spline_optimizer.calculate_negative_ys_loss(lod_x)
-        negative_ys_loss = top_spline_negative_ys_loss + bottom_spline_negative_ys_loss
+            top_spline_negative_ys_loss = fish_body_mesh.top_spline_optimizer.calculate_negative_ys_loss(lod_x)
+            bottom_spline_negative_ys_loss = fish_body_mesh.bottom_spline_optimizer.calculate_negative_ys_loss(lod_x)
+            negative_ys_loss = top_spline_negative_ys_loss + bottom_spline_negative_ys_loss
 
-        loss = (image_loss * image_weight + alpha_loss * alpha_weight + negative_ys_loss * negative_ys_weight)
+            loss = (image_loss * image_weight + alpha_loss * alpha_weight + negative_ys_loss * negative_ys_weight)
 
 
-        # # dump graph
-        # if (epoch % visualize_epoch_interval == 0):
-        #     from torchviz import make_dot, make_dot_from_trace
-        #     g = make_dot(loss, dict(
-        #         length_xyz = curve_mesh_optimizer.length_xyz, 
-        #         origin_pos = curve_mesh_optimizer.origin_pos, 
-        #         key_ys = curve_mesh_optimizer.spline_optimizer.key_ys, 
-        #         key_ts = curve_mesh_optimizer.spline_optimizer.key_ts, 
-        #         vertices = curve_mesh_optimizer.body_mesh.vertices, 
-        #         texture_map = curve_mesh_optimizer.body_mesh.texture_map, 
-        #         output = loss))
-        #     g.view()
+            # # dump graph
+            # if (epoch % visualize_epoch_interval == 0):
+            #     from torchviz import make_dot, make_dot_from_trace
+            #     g = make_dot(loss, dict(
+            #         length_xyz = curve_mesh_optimizer.length_xyz, 
+            #         origin_pos = curve_mesh_optimizer.origin_pos, 
+            #         key_ys = curve_mesh_optimizer.spline_optimizer.key_ys, 
+            #         key_ts = curve_mesh_optimizer.spline_optimizer.key_ts, 
+            #         vertices = curve_mesh_optimizer.body_mesh.vertices, 
+            #         texture_map = curve_mesh_optimizer.body_mesh.texture_map, 
+            #         output = loss))
+            #     g.view()
 
-        ### Update the parameters ###
-        loss.backward()
+            ### Update the parameters ###
+            loss.backward()
 
-        train_spline = True if epoch >= spline_start_train_epoch else False
-        fish_body_mesh.step(train_spline)
+            train_spline = True if epoch >= spline_start_train_epoch else False
+            fish_body_mesh.step(train_spline)
+
+        else:
+            fish_fin_mesh.zero_grad()
+            fish_body_mesh.update_mesh(lod_x, lod_y)
+            fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+            rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
+                elev = data['metadata']['cam_elev'], 
+                azim = data['metadata']['cam_azim'], 
+                r = data['metadata']['cam_radius'], 
+                look_at_height = data['metadata']['cam_look_at_height'], 
+                fovyangle = data['metadata']['cam_fovyangle'],
+                mesh = fish_fin_mesh,
+                sigmainv = data['metadata']['sigmainv'],
+                texture_map=texture_map)
+
+            ### Compute Losses ###
+            alpha_loss = torch.mean(torch.abs(soft_mask - gt_dorsal_fin_mask[:,:,0]))
+
+            sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
+            negative_ys_loss = sil_spline_negative_ys_loss
+
+            loss = (alpha_loss * alpha_weight + negative_ys_loss * negative_ys_weight)
+
+
+            # # dump graph
+            # if (epoch % visualize_epoch_interval == 0):
+            #     from torchviz import make_dot, make_dot_from_trace
+            #     g = make_dot(loss, dict(
+            #         length_xyz = curve_mesh_optimizer.length_xyz, 
+            #         origin_pos = curve_mesh_optimizer.origin_pos, 
+            #         key_ys = curve_mesh_optimizer.spline_optimizer.key_ys, 
+            #         key_ts = curve_mesh_optimizer.spline_optimizer.key_ts, 
+            #         vertices = curve_mesh_optimizer.body_mesh.vertices, 
+            #         texture_map = curve_mesh_optimizer.body_mesh.texture_map, 
+            #         output = loss))
+            #     g.view()
+
+            ### Update the parameters ###
+            loss.backward()
+
+            train_spline = True if epoch >= spline_start_train_epoch else False
+            fish_fin_mesh.step(train_spline)
 
         print(f"Epoch {epoch} - loss: {float(loss)}")
 
