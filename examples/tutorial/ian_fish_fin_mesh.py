@@ -5,6 +5,7 @@ import time
 
 import torch
 import torch.nn.functional as F
+from torch.nn.functional import normalize
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider, Button, TextBox
@@ -144,17 +145,21 @@ class FishFinMesh:
         assert lod_y > 1, f'lod_y should greater than 1!'
         assert root_xyzs.shape[0] > 1, f'root_xyzs.shape[0] should greater than 1!'
         assert ys.shape[0] > 1, f'ys.shape[0] should greater than 1!'
-
-        # expand top_ys to top_xyzs
-        xs = torch.zeros(ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)
-        zs = torch.zeros(ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)
-        grow_xyzs = torch.cat(
-            (xs.unsqueeze(1), 
-             ys.unsqueeze(1), 
-             zs.unsqueeze(1)), 1)
         
+        # calculate root_dirs (by root_xyzs direction).rotate(90 degree)
+        # TODO: the "dx" could be smaller to increase precision
+        grow_dirs = (root_xyzs[1] - root_xyzs[0]).unsqueeze(0)
+        for idx in range(1, root_xyzs.shape[0]):
+            root_dir = root_xyzs[idx] - root_xyzs[idx - 1]
+            grow_dir_x = -root_dir[1]
+            grow_dir_y = root_dir[0]
+            grow_dir_z = torch.tensor(0, dtype=grow_dir_x.dtype, device=grow_dir_x.device, requires_grad=False)
+            stacked_grow_dir = torch.stack((grow_dir_x, grow_dir_y, grow_dir_z), -1)
+            grow_dir = normalize(stacked_grow_dir, p=2.0, dim=0) * ys[idx]
+            grow_dirs = torch.cat((grow_dirs, grow_dir.unsqueeze(0)), 0)
+
         # rotate grow_xyzs
-        rotated_grow_xyzs = self.rotate_grow_xyzs(grow_xyzs)
+        rotated_grow_xyzs = self.rotate_grow_xyzs(grow_dirs)
 
 
         # vertices

@@ -43,7 +43,7 @@ def train_mesh():
 
     # fin
     # fin_uv_lr = 0
-    fin_dir_lr = 5e-2
+    fin_dir_lr = 2e-2
     fin_uv_lr = 5e-2
     # fin_dir_lr = 5e-2
     fin_start_train_epoch = 100
@@ -51,8 +51,10 @@ def train_mesh():
 
     # parameters
     rendered_path_single = "./resources/rendered_goldfish/"
-    num_epoch = 200
+
+    num_epoch = 300
     visualize_epoch_interval = 10
+
     key_size = 20
     lod_x = 40
     lod_y = 20
@@ -100,7 +102,7 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0, 1], end_uv=[0.9, 0.9])
+        start_uv=[0, 1], end_uv=[1, 1])
     
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
@@ -108,7 +110,7 @@ def train_mesh():
 
     for epoch in range(num_epoch):
 
-        if (epoch % visualize_epoch_interval == 0 and epoch >= fin_start_train_epoch):
+        if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch)):
             fish_body_mesh.update_mesh(lod_x, lod_y)
             fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
             visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch)
