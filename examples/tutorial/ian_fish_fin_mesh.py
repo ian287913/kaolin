@@ -44,13 +44,14 @@ class FishFinMesh:
         
         self.key_size = key_size
 
-        # init top curve and bottom curve
+        # init sil curve and bottom curve
         self.sil_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
             key_size,  
             y_lr=y_lr, 
             t_lr=t_lr, 
             scheduler_step_size=scheduler_step_size, 
-            scheduler_gamma=scheduler_gamma)
+            scheduler_gamma=scheduler_gamma,
+            init_key_ys=0.3)
         
         # initialize leaves
         self.start_uv = torch.tensor(start_uv, dtype=torch.float, device='cuda', requires_grad=True)
@@ -82,6 +83,29 @@ class FishFinMesh:
             step_size=scheduler_step_size,
             gamma=scheduler_gamma)
 
+    # penalize uv that is not inside [(0, 0), (1, 1)]
+    def calculate_uv_bound_loss(self):
+        exceeded_value = torch.tensor((0), dtype=torch.float, device='cuda')
+        if (self.start_uv[0] > 1):
+            exceeded_value += torch.square(self.start_uv[0] - 1)
+        if (self.start_uv[1] > 1):
+            exceeded_value += torch.square(self.start_uv[1] - 1)
+        if (self.start_uv[0] < 0):
+            exceeded_value += torch.square(self.start_uv[0])
+        if (self.start_uv[1] < 0):
+            exceeded_value += torch.square(self.start_uv[1])
+        
+        if (self.end_uv[0] > 1):
+            exceeded_value += torch.square(self.end_uv[0] - 1)
+        if (self.end_uv[1] > 1):
+            exceeded_value += torch.square(self.end_uv[1] - 1)
+        if (self.end_uv[0] < 0):
+            exceeded_value += torch.square(self.end_uv[0])
+        if (self.end_uv[1] < 0):
+            exceeded_value += torch.square(self.end_uv[1])
+
+        return exceeded_value
+
     def zero_grad(self):
         self.sil_spline_optimizer.zero_grad()
 
@@ -106,7 +130,9 @@ class FishFinMesh:
 
 
     def update_mesh(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, lod_x, lod_y):
-        root_uvs = ian_utils.torch_linspace(self.start_uv, self.end_uv, lod_x)
+        clamped_start_uv = torch.clamp(self.start_uv, 0, 1)
+        clamped_end_uv = torch.clamp(self.end_uv, 0, 1)
+        root_uvs = ian_utils.torch_linspace(clamped_start_uv, clamped_end_uv, lod_x)
         root_xyzs = body_mesh.get_positions_by_uvs(root_uvs)
 
         self.set_mesh_by_samples(

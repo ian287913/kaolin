@@ -24,7 +24,7 @@ scheduler_gamma = 0.5
 ################################## Class Definition ##################################
 
 class CubicSplineOptimizer:
-    def __init__(self, key_size = 3, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5):
+    def __init__(self, key_size = 3, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5, init_key_ys = 1.0):
         # Hyperparameters
         self.y_lr = y_lr
         self.t_lr = t_lr
@@ -35,7 +35,8 @@ class CubicSplineOptimizer:
         self.key_xs = torch.linspace(0, 1, key_size, dtype=torch.float, device='cuda',
                                      requires_grad=False)
         self.key_ys = torch.ones(key_size, dtype=torch.float, device='cuda',
-                                    requires_grad=True)
+                                    requires_grad=False) * init_key_ys
+        self.key_ys.requires_grad = True
         self.key_ts = torch.zeros(key_size, dtype=torch.float, device='cuda',
                                     requires_grad=True)
         # initialize optimizers and schedulers
