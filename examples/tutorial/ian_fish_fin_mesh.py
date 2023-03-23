@@ -39,7 +39,7 @@ class FishFinMesh:
                  scheduler_step_size = 20, scheduler_gamma = 0.5,
                  uv_lr = 5e-1, dir_lr = 5e-1,
                  start_uv = [0, 1], end_uv = [1, 1], 
-                 start_dir = [90], end_dir = [90], 
+                 start_dir = [0], end_dir = [0], 
                  ):
         
         self.key_size = key_size
@@ -154,14 +154,15 @@ class FishFinMesh:
              zs.unsqueeze(1)), 1)
         
         # rotate grow_xyzs
-        # TODO...
+        rotated_grow_xyzs = self.rotate_grow_xyzs(grow_xyzs)
+
 
         # vertices
         self.vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda',
                                 requires_grad=True)
         # for each column
         for idx, root in enumerate(root_xyzs):
-            new_vertices = ian_utils.torch_linspace(root, root + grow_xyzs[idx], lod_y)
+            new_vertices = ian_utils.torch_linspace(root, root + rotated_grow_xyzs[idx], lod_y)
             self.vertices = torch.cat((self.vertices, new_vertices), 0)
 
         self.vertices = self.vertices.unsqueeze(0)
@@ -199,3 +200,20 @@ class FishFinMesh:
         # face_uvs
         self.face_uvs = kal.ops.mesh.index_vertices_by_faces(self.uvs, self.face_uvs_idx).detach()
         self.face_uvs.requires_grad = False
+    
+    def rotate_grow_xyzs(self, grow_xyzs: torch.Tensor):
+        rotated_grow_xyzs = torch.zeros((0, 3), dtype=grow_xyzs.dtype, device=grow_xyzs.device,
+                                requires_grad=True)
+        # angles
+        rotate_dirs = ian_utils.torch_linspace(self.start_dir, self.end_dir, grow_xyzs.shape[0])
+
+        # for each column
+        for idx, grow_xyz in enumerate(grow_xyzs):
+            angle = rotate_dirs[idx]
+            x = grow_xyz[0] * torch.cos(angle) - grow_xyz[1] * torch.sin(angle)
+            y = grow_xyz[0] * torch.sin(angle) + grow_xyz[1] * torch.cos(angle)
+            z = grow_xyz[2] * torch.ones(1, dtype=grow_xyzs.dtype, device=grow_xyzs.device)
+            rotated_xyz = torch.stack((x, y, z), -1)
+            rotated_grow_xyzs = torch.cat((rotated_grow_xyzs, rotated_xyz), 0)
+
+        return rotated_grow_xyzs

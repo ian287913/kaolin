@@ -28,7 +28,7 @@ def train_mesh():
     # Hyperparameters
     image_weight = 0
     alpha_weight = 100
-    negative_ys_weight = 1 # this will cause explosion!
+    negative_ys_weight = 2 # this will cause explosion!
     y_lr = 5e-2
     t_lr = 5e-2
     scheduler_step_size = 20
@@ -43,15 +43,15 @@ def train_mesh():
 
     # fin
     # fin_uv_lr = 0
-    fin_dir_lr = 0
-    fin_uv_lr = 5e-3
+    fin_dir_lr = 5e-2
+    fin_uv_lr = 5e-2
     # fin_dir_lr = 5e-2
-    fin_start_train_epoch = 200
-    fin_uv_bound_weight = 1
+    fin_start_train_epoch = 100
+    fin_uv_bound_weight = 100
 
     # parameters
     rendered_path_single = "./resources/rendered_goldfish/"
-    num_epoch = 400
+    num_epoch = 200
     visualize_epoch_interval = 10
     key_size = 20
     lod_x = 40
@@ -185,7 +185,7 @@ def train_mesh():
             loss.backward()
 
             train_spline = True if epoch >= spline_start_train_epoch else False
-            fish_fin_mesh.step(False)
+            fish_fin_mesh.step(train_spline)
 
         print(f"Epoch {epoch} - loss: {float(loss)}")
 
@@ -205,6 +205,8 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
     if (fish_fin_mesh is not None):
         print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
         print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
+        print(f"fish_fin_mesh.start_dir = {fish_fin_mesh.start_dir}")
+        print(f"fish_fin_mesh.end_dir = {fish_fin_mesh.end_dir}")
 
 
     rendered_image = None
