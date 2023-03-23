@@ -177,3 +177,11 @@ def create_dataloader_with_single_view(from_path:str, batch_size = 1):
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size,
                                             shuffle=True, pin_memory=True) 
     return train_data, dataloader
+
+def convert_tensor_dict(d:dict):
+    for k,v in d.items():        
+        if isinstance(v, dict):
+            convert_tensor_dict(v)
+        elif (torch.is_tensor(v)):            
+            d[k] = v.detach().cpu().numpy()
+    

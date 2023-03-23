@@ -34,11 +34,20 @@ class CubicSplineOptimizer:
         # initialize keys
         self.key_xs = torch.linspace(0, 1, key_size, dtype=torch.float, device='cuda',
                                      requires_grad=False)
+        
         self.key_ys = torch.ones(key_size, dtype=torch.float, device='cuda',
                                     requires_grad=False) * init_key_ys
         self.key_ys.requires_grad = True
+
         self.key_ts = torch.zeros(key_size, dtype=torch.float, device='cuda',
-                                    requires_grad=True)
+                                    requires_grad=False)
+        self.key_ts.requires_grad = True
+        
+        self.parameters = {}
+        self.parameters['key_xs'] = self.key_xs
+        self.parameters['key_ys'] = self.key_ys
+        self.parameters['key_ts'] = self.key_ts
+
         # initialize optimizers and schedulers
         self.key_ys_optim  = torch.optim.Adam(params=[self.key_ys], lr = self.y_lr)
         self.key_ts_optim  = torch.optim.Adam(params=[self.key_ts], lr = self.t_lr)
@@ -72,7 +81,6 @@ class CubicSplineOptimizer:
         loss = torch.exp(-ys)
         return torch.mean(loss)
 
-
     def step(self):
         # # try to print grad
         # print(f"self.key_ys_optim.param_groups = {self.key_ys_optim.param_groups}")
@@ -83,6 +91,7 @@ class CubicSplineOptimizer:
         self.key_ts_optim.step()
         self.key_ys_scheduler.step()
         self.key_ts_scheduler.step()
+
 
 ################################## Utils ##################################
 

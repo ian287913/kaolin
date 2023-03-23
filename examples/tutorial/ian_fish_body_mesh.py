@@ -14,6 +14,7 @@ import ian_utils
 import kaolin as kal
 import numpy as np
 import matplotlib.pylab as pylab
+import json
 
 import ian_torch_cubic_spline_interp
 import ian_cubic_spline_optimizer
@@ -65,12 +66,23 @@ class FishBodyMesh:
         # initialize leaves
         self.origin_xy = torch.tensor((-1, 0), dtype=torch.float, device='cuda', requires_grad=True)
         self.origin_z = torch.tensor((0), dtype=torch.float, device='cuda', requires_grad=False)
-        ##self.origin_pos = torch.cat((self.origin_xy, self.origin_z.unsqueeze(0)), 0)
 
         self.length_x = torch.tensor((2), dtype=torch.float, device='cuda', requires_grad=True)
         self.length_y = torch.tensor((0), dtype=torch.float, device='cuda', requires_grad=False)
         self.length_z = torch.tensor((0), dtype=torch.float, device='cuda', requires_grad=False)
-        ##self.length_xyz = torch.cat((self.length_x.unsqueeze(0), self.length_y.unsqueeze(0), self.length_z.unsqueeze(0)), 0)
+
+        self.parameters = {}
+        self.parameters['self.origin_xy'] = self.origin_xy
+        self.parameters['self.origin_z'] = self.origin_z
+        self.parameters['self.length_x'] = self.length_x
+        self.parameters['self.length_y'] = self.length_y
+        self.parameters['self.length_z'] = self.length_z
+        
+        self.parameters['self.key_size'] = self.key_size
+        self.parameters['self.top_spline'] = self.top_spline_optimizer.parameters
+        self.parameters['self.bottom_spline'] = self.bottom_spline_optimizer.parameters
+        
+
 
         # initialize optimizers and schedulers
         self.origin_pos_optim  = torch.optim.Adam(params=[self.origin_xy], lr = origin_pos_lr)
@@ -209,3 +221,15 @@ class FishBodyMesh:
         # face_uvs
         self.face_uvs = kal.ops.mesh.index_vertices_by_faces(self.uvs, self.face_uvs_idx).detach()
         self.face_uvs.requires_grad = False
+
+    def export_json(self, path):
+        exporting_parameters = self.parameters.copy()
+        ian_utils.convert_tensor_dict(exporting_parameters)
+        print(f"exporting_parameters = {exporting_parameters}")
+
+        filepath = os.path.join(path,'fish_body.json')
+        with open(filepath, 'w') as fp:
+            json.dump(exporting_parameters, fp)
+        print(f'file exported to {filepath}.')
+
+    

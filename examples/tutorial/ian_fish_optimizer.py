@@ -52,7 +52,7 @@ def train_mesh():
     # parameters
     rendered_path_single = "./resources/rendered_goldfish/"
 
-    num_epoch = 300
+    num_epoch = 50
     visualize_epoch_interval = 10
 
     key_size = 20
@@ -193,7 +193,9 @@ def train_mesh():
 
     fish_body_mesh.update_mesh(lod_x, lod_y)
     fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
-    visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch)
+    visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch + 1)
+
+    export_fish_body_json(rendered_path_single, fish_body_mesh)
 
 
 def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, renderer:ian_renderer.Renderer, texture_map, data, epoch = 0):
@@ -252,6 +254,10 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
 
     ##pylab.savefig(f"./optimization record/{epoch}.png")
     ##pylab.close()
+
+def export_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
+    with torch.no_grad():
+        mesh.export_json(path)
 
 if __name__ == "__main__":
     train_mesh()
