@@ -102,7 +102,7 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0, 1], end_uv=[1, 1])
+        start_uv=[0, 0], end_uv=[0, 1])
     
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
