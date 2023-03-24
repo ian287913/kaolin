@@ -93,6 +93,8 @@ def train_mesh():
         origin_pos_lr=origin_pos_lr,
         length_xyz_lr=length_xyz_lr)
     
+    import_fish_body_json(rendered_path_single, fish_body_mesh)
+    
     # fin mesh
     fish_fin_mesh = ian_fish_fin_mesh.FishFinMesh(
         key_size, 
@@ -110,7 +112,7 @@ def train_mesh():
 
     for epoch in range(num_epoch):
 
-        if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch)):
+        if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
             fish_body_mesh.update_mesh(lod_x, lod_y)
             fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
             visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch)
@@ -257,7 +259,11 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
 
 def export_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
     with torch.no_grad():
-        mesh.export_json(path)
+        mesh.export_to_json(path)
+
+
+def import_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
+    mesh.import_from_json(path)
 
 if __name__ == "__main__":
     train_mesh()

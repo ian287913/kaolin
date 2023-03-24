@@ -25,13 +25,12 @@ scheduler_gamma = 0.5
 
 class CubicSplineOptimizer:
     def __init__(self, key_size = 3, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5, init_key_ys = 1.0):
-        # Hyperparameters
-        self.y_lr = y_lr
-        self.t_lr = t_lr
-        self.scheduler_step_size = scheduler_step_size
-        self.scheduler_gamma = scheduler_gamma
-
+        self.set_empty_spline(key_size, init_key_ys)
+        self.set_optimizer(y_lr, t_lr, scheduler_step_size, scheduler_gamma)
+    
+    def set_empty_spline(self, key_size, init_key_ys = 1.0):
         # initialize keys
+        self.key_size = key_size
         self.key_xs = torch.linspace(0, 1, key_size, dtype=torch.float, device='cuda',
                                      requires_grad=False)
         
@@ -42,11 +41,37 @@ class CubicSplineOptimizer:
         self.key_ts = torch.zeros(key_size, dtype=torch.float, device='cuda',
                                     requires_grad=False)
         self.key_ts.requires_grad = True
-        
+
         self.parameters = {}
         self.parameters['key_xs'] = self.key_xs
         self.parameters['key_ys'] = self.key_ys
         self.parameters['key_ts'] = self.key_ts
+
+    def set_parameters(self, key_xs, key_ys, key_ts):
+        self.key_xs = torch.tensor(key_xs, dtype=torch.float, device='cuda',
+                                     requires_grad=False)
+
+        self.key_ys = torch.tensor(key_ys, dtype=torch.float, device='cuda',
+                                    requires_grad=False)
+        self.key_ys.requires_grad = True
+
+        self.key_ts = torch.tensor(key_ts, dtype=torch.float, device='cuda',
+                                    requires_grad=False)
+        self.key_ts.requires_grad = True
+
+        self.key_size = self.key_xs.shape[0]
+
+        self.parameters = {}
+        self.parameters['key_xs'] = self.key_xs
+        self.parameters['key_ys'] = self.key_ys
+        self.parameters['key_ts'] = self.key_ts
+
+    def set_optimizer(self, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5):
+        # Hyperparameters
+        self.y_lr = y_lr
+        self.t_lr = t_lr
+        self.scheduler_step_size = scheduler_step_size
+        self.scheduler_gamma = scheduler_gamma
 
         # initialize optimizers and schedulers
         self.key_ys_optim  = torch.optim.Adam(params=[self.key_ys], lr = self.y_lr)
@@ -59,6 +84,31 @@ class CubicSplineOptimizer:
             self.key_ts_optim,
             step_size=self.scheduler_step_size,
             gamma=self.scheduler_gamma)
+        
+        self.optimizer_parameters = {}
+        self.optimizer_parameters['y_lr'] = self.y_lr
+        self.optimizer_parameters['t_lr'] = self.t_lr
+        self.optimizer_parameters['scheduler_step_size'] = self.scheduler_step_size
+        self.optimizer_parameters['scheduler_gamma'] = self.scheduler_gamma
+
+    def load_from_json_dict(self, json_dict:dict):
+        # parameters
+        self.set_parameters(np.array(json_dict['parameters']['key_xs']), 
+                        np.array(json_dict['parameters']['key_ys']),
+                        np.array(json_dict['parameters']['key_ts']))
+
+        # optimizer parameters
+        self.set_optimizer(
+            json_dict['optimizer_parameters']['y_lr'], 
+            json_dict['optimizer_parameters']['y_lr'], 
+            json_dict['optimizer_parameters']['scheduler_step_size'], 
+            json_dict['optimizer_parameters']['scheduler_gamma'])
+
+    def get_json_dict(self):
+        json_dict = {}
+        json_dict['parameters'] = self.parameters
+        json_dict['optimizer_parameters'] = self.optimizer_parameters
+        return json_dict
     '''
     optimization related funcitons
     should call by this order: 

@@ -14,7 +14,7 @@ import ian_utils
 import kaolin as kal
 import numpy as np
 import matplotlib.pylab as pylab
-import json
+import codecs, json
 
 import ian_torch_cubic_spline_interp
 import ian_cubic_spline_optimizer
@@ -42,8 +42,6 @@ class FishBodyMesh:
                  origin_pos_lr = 5e-1, length_xyz_lr = 5e-1
                  ):
         
-        self.key_size = key_size
-
         # init top curve and bottom curve
         self.top_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
             key_size,  
@@ -72,18 +70,63 @@ class FishBodyMesh:
         self.length_z = torch.tensor((0), dtype=torch.float, device='cuda', requires_grad=False)
 
         self.parameters = {}
-        self.parameters['self.origin_xy'] = self.origin_xy
-        self.parameters['self.origin_z'] = self.origin_z
-        self.parameters['self.length_x'] = self.length_x
-        self.parameters['self.length_y'] = self.length_y
-        self.parameters['self.length_z'] = self.length_z
-        
-        self.parameters['self.key_size'] = self.key_size
-        self.parameters['self.top_spline'] = self.top_spline_optimizer.parameters
-        self.parameters['self.bottom_spline'] = self.bottom_spline_optimizer.parameters
-        
+        self.parameters['origin_xy'] = self.origin_xy
+        self.parameters['origin_z'] = self.origin_z
+        self.parameters['length_x'] = self.length_x
+        self.parameters['length_y'] = self.length_y
+        self.parameters['length_z'] = self.length_z
 
+        self.parameters['top_spline'] = self.top_spline_optimizer.get_json_dict()
+        self.parameters['bottom_spline'] = self.bottom_spline_optimizer.get_json_dict()
+        
+        self.set_optimizer(scheduler_step_size=scheduler_step_size, scheduler_gamma=scheduler_gamma,
+                           origin_pos_lr=origin_pos_lr, length_xyz_lr=length_xyz_lr)
+        
+    def set_parameters(self, 
+                       origin_xy, origin_z,
+                       length_x, length_y, length_z,
+                       top_spline_json_dict, bottom_spline_json_dict):
 
+        # init top curve and bottom curve
+        self.top_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
+        self.bottom_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
+        
+        self.top_spline_optimizer.load_from_json_dict(top_spline_json_dict)
+        self.bottom_spline_optimizer.load_from_json_dict(bottom_spline_json_dict)
+        
+        # init mesh
+        self.lod_x = None
+        self.lod_y = None
+        self.vertices = None
+
+        # initialize leaves
+        self.origin_xy = torch.tensor(origin_xy, dtype=torch.float, device='cuda', requires_grad=True)
+        self.origin_z = torch.tensor(origin_z, dtype=torch.float, device='cuda', requires_grad=False)
+
+        self.length_x = torch.tensor(length_x, dtype=torch.float, device='cuda', requires_grad=True)
+        self.length_y = torch.tensor(length_y, dtype=torch.float, device='cuda', requires_grad=False)
+        self.length_z = torch.tensor(length_z, dtype=torch.float, device='cuda', requires_grad=False)
+
+        self.parameters = {}
+        self.parameters['origin_xy'] = self.origin_xy
+        self.parameters['origin_z'] = self.origin_z
+        self.parameters['length_x'] = self.length_x
+        self.parameters['length_y'] = self.length_y
+        self.parameters['length_z'] = self.length_z
+        
+        self.parameters['top_spline'] = self.top_spline_optimizer.get_json_dict()
+        self.parameters['bottom_spline'] = self.bottom_spline_optimizer.get_json_dict()
+        
+        
+    def set_optimizer(self, 
+                      scheduler_step_size = 20, scheduler_gamma = 0.5,
+                      origin_pos_lr = 5e-1, length_xyz_lr = 5e-1):
+        # Hyperparameters
+        self.scheduler_step_size = scheduler_step_size
+        self.scheduler_gamma = scheduler_gamma
+        self.origin_pos_lr = origin_pos_lr
+        self.length_xyz_lr = length_xyz_lr
+        
         # initialize optimizers and schedulers
         self.origin_pos_optim  = torch.optim.Adam(params=[self.origin_xy], lr = origin_pos_lr)
         self.length_xyz_optim  = torch.optim.Adam(params=[self.length_x], lr = length_xyz_lr)
@@ -95,6 +138,13 @@ class FishBodyMesh:
             self.length_xyz_optim,
             step_size=scheduler_step_size,
             gamma=scheduler_gamma)
+        
+        self.optimizer_parameters = {}
+        self.optimizer_parameters['origin_pos_lr'] = self.origin_pos_lr
+        self.optimizer_parameters['length_xyz_lr'] = self.length_xyz_lr
+        self.optimizer_parameters['scheduler_step_size'] = self.scheduler_step_size
+        self.optimizer_parameters['scheduler_gamma'] = self.scheduler_gamma
+
 
     def zero_grad(self):
         self.top_spline_optimizer.zero_grad()
@@ -222,14 +272,32 @@ class FishBodyMesh:
         self.face_uvs = kal.ops.mesh.index_vertices_by_faces(self.uvs, self.face_uvs_idx).detach()
         self.face_uvs.requires_grad = False
 
-    def export_json(self, path):
-        exporting_parameters = self.parameters.copy()
-        ian_utils.convert_tensor_dict(exporting_parameters)
-        print(f"exporting_parameters = {exporting_parameters}")
+    def export_to_json(self, path):
+        export_dict = {}
+        export_dict['parameters'] = self.parameters
+        export_dict['optimizer_parameters'] = self.optimizer_parameters
+        converted_export_dict = ian_utils.convert_tensor_dict(export_dict.copy())
+        print(f"converted_export_dict = {converted_export_dict}")
 
         filepath = os.path.join(path,'fish_body.json')
         with open(filepath, 'w') as fp:
-            json.dump(exporting_parameters, fp)
+            json.dump(converted_export_dict, fp, indent=4)
         print(f'file exported to {filepath}.')
 
-    
+    def import_from_json(self, path):
+        json_path = os.path.join(path,'fish_body.json')
+        obj_text = codecs.open(json_path, 'r', encoding='utf-8').read()
+        json_dict = json.loads(obj_text) #This reads json to list
+
+        self.set_parameters(origin_xy=np.array(json_dict['parameters']['origin_xy']),
+                            origin_z=np.array(json_dict['parameters']['origin_z']),
+                            length_x=np.array(json_dict['parameters']['length_x']),
+                            length_y=np.array(json_dict['parameters']['length_y']),
+                            length_z=np.array(json_dict['parameters']['length_z']),
+                            top_spline_json_dict=json_dict['parameters']['top_spline'],
+                            bottom_spline_json_dict=json_dict['parameters']['bottom_spline'])
+
+        self.set_optimizer(origin_pos_lr=json_dict['optimizer_parameters']['origin_pos_lr'],
+                           length_xyz_lr=json_dict['optimizer_parameters']['length_xyz_lr'],
+                           scheduler_step_size=json_dict['optimizer_parameters']['scheduler_step_size'],
+                           scheduler_gamma=json_dict['optimizer_parameters']['scheduler_gamma'])

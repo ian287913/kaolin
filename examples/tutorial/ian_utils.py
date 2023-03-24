@@ -179,9 +179,15 @@ def create_dataloader_with_single_view(from_path:str, batch_size = 1):
     return train_data, dataloader
 
 def convert_tensor_dict(d:dict):
+    converted_dict = {}
+
     for k,v in d.items():        
         if isinstance(v, dict):
-            convert_tensor_dict(v)
+            converted_dict[k] = convert_tensor_dict(v)
         elif (torch.is_tensor(v)):            
-            d[k] = v.detach().cpu().numpy()
+            converted_dict[k] = v.detach().cpu().numpy().tolist()
+        else:
+            print(f"UNKNOWN TYPE of {k}: {type(v)}")
+            converted_dict[k] = v
+    return converted_dict
     
