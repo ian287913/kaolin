@@ -15,6 +15,7 @@ import ian_utils
 import kaolin as kal
 import numpy as np
 import matplotlib.pylab as pylab
+import codecs, json
 
 import ian_torch_cubic_spline_interp
 import ian_cubic_spline_optimizer
@@ -45,6 +46,11 @@ class FishFinMesh:
                  ):
         
         self.key_size = key_size
+
+        self.scheduler_step_size = scheduler_step_size
+        self.scheduler_gamma = scheduler_gamma
+        self.uv_lr = uv_lr
+        self.dir_lr = dir_lr
 
         # init sil curve and bottom curve
         self.sil_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
@@ -85,8 +91,86 @@ class FishFinMesh:
             step_size=scheduler_step_size,
             gamma=scheduler_gamma)
         
-        print(f'self.start_uv_optim.param_groups = {self.start_uv_optim.param_groups}')
+        self.parameters = {}
+        self.parameters['start_uv'] = self.start_uv
+        self.parameters['end_uv'] = self.end_uv
+        self.parameters['start_dir'] = self.start_dir
+        self.parameters['end_dir'] = self.end_dir
+        self.parameters['init_height'] = init_height
+        self.parameters['sil_spline'] = self.sil_spline_optimizer.get_json_dict()
+
+        self.optimizer_parameters = {}
+        self.optimizer_parameters['uv_lr'] = self.uv_lr
+        self.optimizer_parameters['dir_lr'] = self.dir_lr
+        self.optimizer_parameters['scheduler_step_size'] = self.scheduler_step_size
+        self.optimizer_parameters['scheduler_gamma'] = self.scheduler_gamma
+
     
+    def set_parameters(self, 
+                       start_uv, end_uv,
+                       start_dir, end_dir,
+                       init_height,
+                       sil_spline_json_dict):
+
+        # init top curve and bottom curve
+        self.sil_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
+        
+        self.sil_spline_optimizer.load_from_json_dict(sil_spline_json_dict)
+        
+        # initialize leaves
+        self.start_uv = torch.tensor(start_uv, dtype=torch.float, device='cuda', requires_grad=True)
+        self.end_uv = torch.tensor(end_uv, dtype=torch.float, device='cuda', requires_grad=True)
+
+        self.start_dir = torch.tensor((start_dir), dtype=torch.float, device='cuda', requires_grad=True)
+        self.end_dir = torch.tensor((end_dir), dtype=torch.float, device='cuda', requires_grad=True)
+
+        self.parameters = {}
+        self.parameters['start_uv'] = self.start_uv
+        self.parameters['end_uv'] = self.end_uv
+        self.parameters['start_dir'] = self.start_dir
+        self.parameters['end_dir'] = self.end_dir
+        self.parameters['init_height'] = init_height
+        self.parameters['sil_spline'] = self.sil_spline_optimizer.get_json_dict()
+
+    def set_optimizer(self, 
+                      scheduler_step_size = 20, scheduler_gamma = 0.5,
+                      uv_lr = 5e-1, dir_lr = 5e-1):
+        # Hyperparameters
+        self.scheduler_step_size = scheduler_step_size
+        self.scheduler_gamma = scheduler_gamma
+        self.uv_lr = uv_lr
+        self.dir_lr = dir_lr
+        
+        # initialize optimizers and schedulers
+        self.start_uv_optim  = torch.optim.Adam(params=[self.start_uv], lr = uv_lr)
+        self.end_uv_optim  = torch.optim.Adam(params=[self.end_uv], lr = uv_lr)
+        self.start_uv_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.start_uv_optim,
+            step_size=scheduler_step_size,
+            gamma=scheduler_gamma)
+        self.end_uv_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.end_uv_optim,
+            step_size=scheduler_step_size,
+            gamma=scheduler_gamma)
+        
+        self.start_dir_optim  = torch.optim.Adam(params=[self.start_dir], lr = dir_lr)
+        self.end_dir_optim  = torch.optim.Adam(params=[self.end_dir], lr = dir_lr)
+        self.start_dir_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.start_dir_optim,
+            step_size=scheduler_step_size,
+            gamma=scheduler_gamma)
+        self.end_dir_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.end_dir_optim,
+            step_size=scheduler_step_size,
+            gamma=scheduler_gamma)
+        
+        self.optimizer_parameters = {}
+        self.optimizer_parameters['uv_lr'] = self.uv_lr
+        self.optimizer_parameters['dir_lr'] = self.dir_lr
+        self.optimizer_parameters['scheduler_step_size'] = self.scheduler_step_size
+        self.optimizer_parameters['scheduler_gamma'] = self.scheduler_gamma
+
+
     def set_uv_lr(self, lr):
         for g in self.start_uv_optim.param_groups:
             g['lr'] = lr
@@ -240,3 +324,32 @@ class FishFinMesh:
             rotated_grow_xyzs = torch.cat((rotated_grow_xyzs, rotated_xyz), 0)
 
         return rotated_grow_xyzs
+    
+    def export_to_json(self, path, fin_name):
+        export_dict = {}
+        export_dict['parameters'] = self.parameters
+        export_dict['optimizer_parameters'] = self.optimizer_parameters
+        converted_export_dict = ian_utils.convert_tensor_dict(export_dict.copy())
+        print(f"converted_export_dict = {converted_export_dict}")
+
+        filepath = os.path.join(path,f'{fin_name}.json')
+        with open(filepath, 'w') as fp:
+            json.dump(converted_export_dict, fp, indent=4)
+        print(f'file exported to {filepath}.')
+
+    def import_from_json(self, path, fin_name):
+        json_path = os.path.join(path,f'{fin_name}.json')
+        obj_text = codecs.open(json_path, 'r', encoding='utf-8').read()
+        json_dict = json.loads(obj_text) #This reads json to list
+
+        self.set_parameters(start_uv=np.array(json_dict['parameters']['start_uv']),
+                            end_uv=np.array(json_dict['parameters']['end_uv']),
+                            start_dir=np.array(json_dict['parameters']['start_dir']),
+                            end_dir=np.array(json_dict['parameters']['end_dir']),
+                            init_height=np.array(json_dict['parameters']['init_height']),
+                            sil_spline_json_dict=json_dict['parameters']['sil_spline'])
+
+        self.set_optimizer(scheduler_step_size=json_dict['optimizer_parameters']['scheduler_step_size'],
+                           scheduler_gamma=json_dict['optimizer_parameters']['scheduler_gamma'],
+                           uv_lr=json_dict['optimizer_parameters']['uv_lr'],
+                           dir_lr=json_dict['optimizer_parameters']['dir_lr'])
