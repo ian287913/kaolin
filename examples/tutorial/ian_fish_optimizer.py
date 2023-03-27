@@ -27,7 +27,7 @@ import ian_fish_body_mesh
 def train_mesh():
     # Hyperparameters
     image_weight = 0
-    alpha_weight = 100
+    alpha_weight = 200
     negative_ys_weight = 2 # this will cause explosion!
     y_lr = 5e-2
     t_lr = 5e-2
@@ -43,16 +43,16 @@ def train_mesh():
 
     # fin
     # fin_uv_lr = 0
-    fin_dir_lr = 2e-2
-    fin_uv_lr = 5e-2
+    fin_dir_lr = 5e-3
+    fin_uv_lr = 5e-3
     # fin_dir_lr = 5e-2
-    fin_start_train_epoch = 100
+    fin_start_train_epoch = 0
     fin_uv_bound_weight = 100
 
     # parameters
     rendered_path_single = "./resources/rendered_goldfish/"
 
-    num_epoch = 50
+    num_epoch = 300
     visualize_epoch_interval = 10
 
     key_size = 20
@@ -66,9 +66,7 @@ def train_mesh():
     texture_map = torch.ones((1, 3, texture_res, texture_res), dtype=torch.float, device='cuda',
                             requires_grad=False)
     
-
     # get ground truth
-    # get data
     train_data, dataloader = ian_utils.create_dataloader_with_single_view(rendered_path_single, 1)
     data = train_data[0]
     data['metadata']['sigmainv'] = sigmainv
@@ -80,7 +78,34 @@ def train_mesh():
     else:
         gt_dorsal_fin_mask : torch.Tensor = None
 
+    # update render_res
     render_res = gt_rgb.shape[0]
+
+
+    # set hyperparameters to data
+    hyperparameter = {}
+    hyperparameter['num_epoch'] = num_epoch
+    hyperparameter['key_size'] = key_size
+    hyperparameter['lod_x'] = lod_x
+    hyperparameter['lod_y'] = lod_y
+
+    hyperparameter['render_res'] = render_res
+    hyperparameter['texture_res'] = texture_res
+    hyperparameter['sigmainv'] = sigmainv
+
+    hyperparameter['image_weight'] = image_weight
+    hyperparameter['alpha_weight'] = alpha_weight
+    hyperparameter['negative_ys_weight'] = negative_ys_weight
+    hyperparameter['y_lr'] = y_lr
+    hyperparameter['t_lr'] = t_lr
+    hyperparameter['origin_pos_lr'] = origin_pos_lr
+    hyperparameter['length_xyz_lr'] = length_xyz_lr
+
+    hyperparameter['fin_dir_lr'] = fin_dir_lr
+    hyperparameter['fin_uv_lr'] = fin_uv_lr
+    hyperparameter['fin_uv_bound_weight'] = fin_uv_bound_weight
+    
+    data['hyperparameter'] = hyperparameter
 
     # init optimizer
     # body mesh
@@ -96,7 +121,17 @@ def train_mesh():
     import_fish_body_json(rendered_path_single, fish_body_mesh)
     
     # fin mesh
-    fish_fin_mesh = ian_fish_fin_mesh.FishFinMesh(
+    fish_fin_meshes = {}
+    fish_fin_meshes['dorsal_fin'] = ian_fish_fin_mesh.FishFinMesh(
+        key_size, 
+        y_lr=y_lr, 
+        t_lr=t_lr, 
+        scheduler_step_size=scheduler_step_size, 
+        scheduler_gamma=scheduler_gamma,
+        uv_lr=fin_uv_lr,
+        dir_lr=fin_dir_lr,
+        start_uv=[0, 1], end_uv=[1, 1])
+    fish_fin_meshes['caudal_fin'] = ian_fish_fin_mesh.FishFinMesh(
         key_size, 
         y_lr=y_lr, 
         t_lr=t_lr, 
@@ -105,7 +140,30 @@ def train_mesh():
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
         start_uv=[0, 0], end_uv=[0, 1])
+    fish_fin_meshes['anal_fin'] = ian_fish_fin_mesh.FishFinMesh(
+        key_size, 
+        y_lr=y_lr, 
+        t_lr=t_lr, 
+        scheduler_step_size=scheduler_step_size, 
+        scheduler_gamma=scheduler_gamma,
+        uv_lr=fin_uv_lr,
+        dir_lr=fin_dir_lr,
+        start_uv=[0.3, 0], end_uv=[0.05, 0])
+    fish_fin_meshes['pelvic_fin'] = ian_fish_fin_mesh.FishFinMesh(
+        key_size, 
+        y_lr=y_lr, 
+        t_lr=t_lr, 
+        scheduler_step_size=scheduler_step_size, 
+        scheduler_gamma=scheduler_gamma,
+        uv_lr=fin_uv_lr,
+        dir_lr=fin_dir_lr,
+        start_uv=[0.6, 0], end_uv=[0.4, 0])
     
+    ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin']
+    fin_list = ['anal_fin']
+    data['hyperparameter']['fin_list'] = fin_list
+
+
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
     
@@ -114,11 +172,10 @@ def train_mesh():
 
         if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
             fish_body_mesh.update_mesh(lod_x, lod_y)
-            fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
-            visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch)
+            visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch)
 
 
-        if (epoch <= fin_start_train_epoch):
+        if (epoch < fin_start_train_epoch):
             fish_body_mesh.zero_grad()
             fish_body_mesh.update_mesh(lod_x, lod_y)
             rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
@@ -163,60 +220,76 @@ def train_mesh():
             fish_body_mesh.step(train_spline)
 
         else:
-            fish_fin_mesh.zero_grad()
-            fish_body_mesh.update_mesh(lod_x, lod_y)
-            fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
-            rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
-                elev = data['metadata']['cam_elev'], 
-                azim = data['metadata']['cam_azim'], 
-                r = data['metadata']['cam_radius'], 
-                look_at_height = data['metadata']['cam_look_at_height'], 
-                fovyangle = data['metadata']['cam_fovyangle'],
-                mesh = fish_fin_mesh,
-                sigmainv = data['metadata']['sigmainv'],
-                texture_map=texture_map)
-
-            ### Compute Losses ###
-            alpha_loss = torch.mean(torch.abs(soft_mask - gt_dorsal_fin_mask[:,:,0]))
-
-            sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
-            negative_ys_loss = sil_spline_negative_ys_loss
-            fin_uv_bound_loss = fish_fin_mesh.calculate_uv_bound_loss()
-
-            loss = (alpha_loss * alpha_weight + negative_ys_loss * negative_ys_weight + fin_uv_bound_loss * fin_uv_bound_weight)
-
-            ### Update the parameters ###
-            loss.backward()
-
-            train_spline = True if epoch >= spline_start_train_epoch else False
-            fish_fin_mesh.step(train_spline)
+            loss = 0
+            with torch.no_grad():
+                fish_body_mesh.update_mesh(lod_x, lod_y)
+            for fin_name in data['hyperparameter']['fin_list']:
+                loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, renderer, texture_map, data, data[fin_name + '_mask'])
 
         print(f"Epoch {epoch} - loss: {float(loss)}")
 
-    fish_body_mesh.update_mesh(lod_x, lod_y)
-    fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
-    visualize_results(fish_body_mesh, fish_fin_mesh, renderer, texture_map, data, epoch + 1)
+    visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch + 1)
 
     export_fish_body_json(rendered_path_single, fish_body_mesh)
 
+def train_fin_mesh(fish_fin_mesh, fish_body_mesh, 
+                   renderer, texture_map,
+                   data, gt_fin_mask):
+    lod_x = data['hyperparameter']['lod_x']
+    lod_y = data['hyperparameter']['lod_y']
+    alpha_weight = data['hyperparameter']['alpha_weight']
+    negative_ys_weight = data['hyperparameter']['negative_ys_weight']
+    fin_uv_bound_weight = data['hyperparameter']['fin_uv_bound_weight']
 
-def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, renderer:ian_renderer.Renderer, texture_map, data, epoch = 0):
+    fish_fin_mesh.zero_grad()
+    ###fish_body_mesh.update_mesh(lod_x, lod_y)
+    fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+    rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
+        elev = data['metadata']['cam_elev'], 
+        azim = data['metadata']['cam_azim'], 
+        r = data['metadata']['cam_radius'], 
+        look_at_height = data['metadata']['cam_look_at_height'], 
+        fovyangle = data['metadata']['cam_fovyangle'],
+        mesh = fish_fin_mesh,
+        sigmainv = data['metadata']['sigmainv'],
+        texture_map=texture_map)
+
+    ### Compute Losses ###
+    alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
+
+    sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
+    negative_ys_loss = sil_spline_negative_ys_loss
+    fin_uv_bound_loss = fish_fin_mesh.calculate_uv_bound_loss()
+
+    loss = (alpha_loss * alpha_weight + negative_ys_loss * negative_ys_weight + fin_uv_bound_loss * fin_uv_bound_weight)
+
+    ### Update the parameters ###
+    loss.backward()
+
+    fish_fin_mesh.step()
+
+    return loss
+
+def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_meshes, renderer:ian_renderer.Renderer, texture_map, data, epoch = 0):
     
-    print(f"fish_body_mesh.top_spline_optimizer.key_ys = {fish_body_mesh.top_spline_optimizer.key_ys}")
-    print(f"fish_body_mesh.top_spline_optimizer.key_ts = {fish_body_mesh.top_spline_optimizer.key_ts}")
-    print(f"fish_body_mesh.bottom_spline_optimizer.key_ys = {fish_body_mesh.bottom_spline_optimizer.key_ys}")
-    print(f"fish_body_mesh.bottom_spline_optimizer.key_ts = {fish_body_mesh.bottom_spline_optimizer.key_ts}")
-    print(f"fish_body_mesh.origin_xy = {fish_body_mesh.origin_xy}")
-    print(f"fish_body_mesh.length_x = {fish_body_mesh.length_x}")
-    if (fish_fin_mesh is not None):
-        print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
-        print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
-        print(f"fish_fin_mesh.start_dir = {fish_fin_mesh.start_dir}")
-        print(f"fish_fin_mesh.end_dir = {fish_fin_mesh.end_dir}")
+    # print(f"fish_body_mesh.top_spline_optimizer.key_ys = {fish_body_mesh.top_spline_optimizer.key_ys}")
+    # print(f"fish_body_mesh.top_spline_optimizer.key_ts = {fish_body_mesh.top_spline_optimizer.key_ts}")
+    # print(f"fish_body_mesh.bottom_spline_optimizer.key_ys = {fish_body_mesh.bottom_spline_optimizer.key_ys}")
+    # print(f"fish_body_mesh.bottom_spline_optimizer.key_ts = {fish_body_mesh.bottom_spline_optimizer.key_ts}")
+    # print(f"fish_body_mesh.origin_xy = {fish_body_mesh.origin_xy}")
+    # print(f"fish_body_mesh.length_x = {fish_body_mesh.length_x}")
+    # if (fish_fin_mesh is not None):
+    #     print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
+    #     print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
+    #     print(f"fish_fin_mesh.start_dir = {fish_fin_mesh.start_dir}")
+    #     print(f"fish_fin_mesh.end_dir = {fish_fin_mesh.end_dir}")
 
+    lod_x = data['hyperparameter']['lod_x']
+    lod_y = data['hyperparameter']['lod_y']
 
     rendered_image = None
     with torch.no_grad():
+        fish_body_mesh.update_mesh(lod_x, lod_y)
         # body
         rendered_body_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
             elev = data['metadata']['cam_elev'], 
@@ -231,20 +304,23 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
         rendered_image = rendered_body_image * torch.tensor((0, 0, 1), dtype=torch.float, device='cuda', requires_grad=False)
 
         # fin
-        if (fish_fin_mesh is not None):
-            rendered_fin_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
-                elev = data['metadata']['cam_elev'], 
-                azim = data['metadata']['cam_azim'], 
-                r = data['metadata']['cam_radius'], 
-                look_at_height = data['metadata']['cam_look_at_height'], 
-                fovyangle = data['metadata']['cam_fovyangle'],
-                mesh = fish_fin_mesh,
-                sigmainv = data['metadata']['sigmainv'],
-                texture_map=texture_map)
-            rendered_image += rendered_fin_image * torch.tensor((1, 0, 0), dtype=torch.float, device='cuda', requires_grad=False)
-            
+        for fin_name in data['hyperparameter']['fin_list']:
+            if (fin_name in fish_fin_meshes):
+                fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh = fish_fin_meshes[fin_name]
+                fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+                rendered_fin_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
+                    elev = data['metadata']['cam_elev'], 
+                    azim = data['metadata']['cam_azim'], 
+                    r = data['metadata']['cam_radius'], 
+                    look_at_height = data['metadata']['cam_look_at_height'], 
+                    fovyangle = data['metadata']['cam_fovyangle'],
+                    mesh = fish_fin_mesh,
+                    sigmainv = data['metadata']['sigmainv'],
+                    texture_map=texture_map)
+                rendered_image += rendered_fin_image * torch.tensor((1, 0, 0), dtype=torch.float, device='cuda', requires_grad=False)
+            else:
+                print(f'failed to render fin: {fin_name}. the name does not found in the fish_fin_meshes.')
     
-
     # # print(f"visualize_results: rendered_image.shape = {rendered_image.shape}")
     ##pylab.imshow(soft_mask[0].repeat(3, 1, 1).permute(1,2,0).cpu().detach())
     pylab.imshow(rendered_image[0].cpu().detach())

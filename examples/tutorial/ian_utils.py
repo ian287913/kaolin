@@ -152,6 +152,18 @@ def load_rendered_png_and_camera_data(root_dir: Path, data_idx: int = 0):
     dorsal_fin_mask = import_segment_mask(os.path.join(root_dir, f'{data_idx}_dorsal_fin_mask.png'))
     if (dorsal_fin_mask is not None):
         output['dorsal_fin_mask'] = dorsal_fin_mask
+    caudal_fin_mask = import_segment_mask(os.path.join(root_dir, f'{data_idx}_caudal_fin_mask.png'))
+    if (caudal_fin_mask is not None):
+        output['caudal_fin_mask'] = caudal_fin_mask
+    anal_fin_mask = import_segment_mask(os.path.join(root_dir, f'{data_idx}_anal_fin_mask.png'))
+    if (anal_fin_mask is not None):
+        output['anal_fin_mask'] = anal_fin_mask
+    pelvic_fin_mask = import_segment_mask(os.path.join(root_dir, f'{data_idx}_pelvic_fin_mask.png'))
+    if (pelvic_fin_mask is not None):
+        output['pelvic_fin_mask'] = pelvic_fin_mask
+    pectoral_fin_mask = import_segment_mask(os.path.join(root_dir, f'{data_idx}_pectoral_fin_mask.png'))
+    if (pectoral_fin_mask is not None):
+        output['pectoral_fin_mask'] = pectoral_fin_mask
 
     with open(os.path.join(root_dir, f'{data_idx}_metadata.json'), 'r') as f:
         fmetadata = json.load(f)

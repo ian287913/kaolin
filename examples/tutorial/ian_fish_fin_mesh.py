@@ -41,6 +41,7 @@ class FishFinMesh:
                  uv_lr = 5e-1, dir_lr = 5e-1,
                  start_uv = [0, 1], end_uv = [1, 1], 
                  start_dir = [0], end_dir = [0], 
+                 init_height = 0.2
                  ):
         
         self.key_size = key_size
@@ -52,7 +53,7 @@ class FishFinMesh:
             t_lr=t_lr, 
             scheduler_step_size=scheduler_step_size, 
             scheduler_gamma=scheduler_gamma,
-            init_key_ys=0.3)
+            init_key_ys=init_height)
         
         # initialize leaves
         self.start_uv = torch.tensor(start_uv, dtype=torch.float, device='cuda', requires_grad=True)
