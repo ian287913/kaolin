@@ -44,7 +44,7 @@ def train_mesh():
 
     # fin
     # fin_uv_lr = 0
-    fin_dir_lr = 5e-3
+    fin_dir_lr = 5e-2
     fin_uv_lr = 5e-3
     # fin_dir_lr = 5e-2
     fin_start_train_epoch = 0
@@ -56,7 +56,7 @@ def train_mesh():
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
 
-    num_epoch = 10
+    num_epoch = 300
     visualize_epoch_interval = 10
 
     key_size = 20
@@ -110,16 +110,16 @@ def train_mesh():
     hyperparameter['fin_uv_bound_weight'] = fin_uv_bound_weight
 
     hyperparameter['fin_lr_epoch_1'] = 0
-    # hyperparameter['fin_spline_lr_1'] = 0
-    # hyperparameter['fin_uv_lr_1'] = 5e-3
-    hyperparameter['fin_spline_lr_1'] = 5e-2
+    hyperparameter['fin_spline_lr_1'] = 0
     hyperparameter['fin_uv_lr_1'] = 5e-3
+    # hyperparameter['fin_spline_lr_1'] = 5e-2
+    # hyperparameter['fin_uv_lr_1'] = 5e-3
 
-    hyperparameter['fin_lr_epoch_2'] = 10000
-    # hyperparameter['fin_spline_lr_2'] = 5e-2
-    # hyperparameter['fin_uv_lr_2'] = 5e-5
+    hyperparameter['fin_lr_epoch_2'] = 150
     hyperparameter['fin_spline_lr_2'] = 5e-2
-    hyperparameter['fin_uv_lr_2'] = 5e-3
+    hyperparameter['fin_uv_lr_2'] = 5e-5
+    # hyperparameter['fin_spline_lr_2'] = 5e-2
+    # hyperparameter['fin_uv_lr_2'] = 5e-3
     
     data['hyperparameter'] = hyperparameter
 
@@ -140,6 +140,7 @@ def train_mesh():
         origin_pos_lr=origin_pos_lr,
         length_xyz_lr=length_xyz_lr)
     
+    # load body mesh
     import_fish_body_json(rendered_path_single, fish_body_mesh)
     
     # fin mesh
@@ -179,7 +180,7 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0.6, 0], end_uv=[0.4, 0])
+        start_uv=[0.6, 0.1], end_uv=[0.4, 0.1])
     fish_fin_meshes['pectoral_fin'] = ian_fish_fin_mesh.FishFinMesh(
         key_size, 
         y_lr=y_lr, 
@@ -190,13 +191,13 @@ def train_mesh():
         dir_lr=fin_dir_lr,
         start_uv=[0.5, 0.3], end_uv=[0.5, 0.5])
     
-    fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
-    ##fin_list = ['dorsal_fin']
+    ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
+    fin_list = ['pectoral_fin']
     data['hyperparameter']['fin_list'] = fin_list
 
-    # load saved fins
-    for fin_name in data['hyperparameter']['fin_list']:
-        import_fish_fin_json(rendered_path_single, fish_fin_meshes[fin_name], fin_name)
+    # # load saved fins
+    # for fin_name in data['hyperparameter']['fin_list']:
+    #     import_fish_fin_json(rendered_path_single, fish_fin_meshes[fin_name], fin_name)
 
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
@@ -264,10 +265,12 @@ def train_mesh():
 
     visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch + 1)
 
+    # export stuff
     export_fish_body_json(data['output_path'], fish_body_mesh)
     for fin_name in data['hyperparameter']['fin_list']:
         export_fish_fin_json(data['output_path'], fish_fin_meshes[fin_name], fin_name)
 
+    export_hyperparameter_json(data['output_path'], data['hyperparameter'])
 
 
 
@@ -375,6 +378,14 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                 if (fin_name == 'pelvic_fin'):
                     draw_color = (0, 1, 0)
                 rendered_image += rendered_fin_image * torch.tensor(draw_color, dtype=torch.float, device='cuda', requires_grad=False)
+
+                #
+                print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
+                print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
+                print(f"fish_fin_mesh.start_dir = {fish_fin_mesh.start_dir}")
+                print(f"fish_fin_mesh.end_dir = {fish_fin_mesh.end_dir}")
+
+
             else:
                 print(f'failed to render fin: {fin_name}. the name does not found in the fish_fin_meshes.')
     
@@ -383,6 +394,7 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
     pylab.imshow(rendered_image[0].cpu().detach())
     pylab.title(f'epoch: {epoch}')
 
+    # save or show image
     save_image = False
     if (save_image):
         fig_path = f"{data['output_path']}{epoch}.png"
@@ -400,6 +412,16 @@ def export_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
 def export_fish_fin_json(path, mesh:ian_fish_fin_mesh.FishFinMesh, fin_name):
     with torch.no_grad():
         mesh.export_to_json(path, fin_name)
+def export_hyperparameter_json(path, hyperparameter):
+    export_dict = {}
+    export_dict['hyperparameter'] = hyperparameter
+    converted_export_dict = ian_utils.convert_tensor_dict(export_dict.copy())
+    print(f"converted_export_dict = {converted_export_dict}")
+
+    filepath = os.path.join(path,'pyperparameter.json')
+    with open(filepath, 'w') as fp:
+        json.dump(converted_export_dict, fp, indent=4)
+    print(f'file exported to {filepath}.')
 
 def import_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
     mesh.import_from_json(path)
@@ -407,4 +429,8 @@ def import_fish_fin_json(path, mesh:ian_fish_fin_mesh.FishFinMesh, fin_name):
     mesh.import_from_json(path, fin_name)
 
 if __name__ == "__main__":
+    start_time = time.time()
     train_mesh()
+    end_time = time.time()
+    time_lapsed = end_time - start_time
+    print(f'Total time elapsed: {time_lapsed}s')
