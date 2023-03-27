@@ -198,6 +198,8 @@ def convert_tensor_dict(d:dict):
             converted_dict[k] = convert_tensor_dict(v)
         elif (torch.is_tensor(v)):            
             converted_dict[k] = v.detach().cpu().numpy().tolist()
+        elif isinstance(v, np.ndarray):
+            converted_dict[k] = v.tolist()
         else:
             print(f"UNKNOWN TYPE of {k}: {type(v)}")
             converted_dict[k] = v
