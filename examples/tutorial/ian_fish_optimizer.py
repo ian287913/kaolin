@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider, Button, TextBox
 from pathlib import Path
-import ian_utils
+from datetime import datetime  
 
 import kaolin as kal
 import numpy as np
@@ -21,6 +21,7 @@ import ian_utils
 import ian_renderer
 import ian_fish_fin_mesh
 import ian_fish_body_mesh
+
 
 
 
@@ -43,16 +44,19 @@ def train_mesh():
 
     # fin
     # fin_uv_lr = 0
-    fin_dir_lr = 5e-3
+    fin_dir_lr = 5e-2
     fin_uv_lr = 5e-3
     # fin_dir_lr = 5e-2
-    fin_start_train_epoch = 0
+    fin_start_train_epoch = 100
     fin_uv_bound_weight = 100
 
     # parameters
     rendered_path_single = "./resources/rendered_goldfish/"
+    str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
+    output_path = './dibr_output/' + str_date_time + '/'
+    ian_utils.make_path(Path(output_path))
 
-    num_epoch = 300
+    num_epoch = 100
     visualize_epoch_interval = 10
 
     key_size = 20
@@ -104,8 +108,19 @@ def train_mesh():
     hyperparameter['fin_dir_lr'] = fin_dir_lr
     hyperparameter['fin_uv_lr'] = fin_uv_lr
     hyperparameter['fin_uv_bound_weight'] = fin_uv_bound_weight
+
+    hyperparameter['fin_lr_epoch_1'] = 0
+    hyperparameter['fin_spline_lr_1'] = 0
+    hyperparameter['fin_lr_epoch_2'] = 50
+    hyperparameter['fin_spline_lr_2'] = 5e-2
     
     data['hyperparameter'] = hyperparameter
+
+    data['rendered_path'] = rendered_path_single
+    
+    data['output_path'] = output_path
+
+
 
     # init optimizer
     # body mesh
@@ -174,7 +189,7 @@ def train_mesh():
             fish_body_mesh.update_mesh(lod_x, lod_y)
             visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch)
 
-
+        # train body
         if (epoch < fin_start_train_epoch):
             fish_body_mesh.zero_grad()
             fish_body_mesh.update_mesh(lod_x, lod_y)
@@ -218,28 +233,37 @@ def train_mesh():
 
             train_spline = True if epoch >= spline_start_train_epoch else False
             fish_body_mesh.step(train_spline)
-
+        # train fins
         else:
             loss = 0
             with torch.no_grad():
                 fish_body_mesh.update_mesh(lod_x, lod_y)
             for fin_name in data['hyperparameter']['fin_list']:
-                loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, renderer, texture_map, data, data[fin_name + '_mask'])
+                loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, renderer, texture_map, data, data[fin_name + '_mask'], epoch)
 
         print(f"Epoch {epoch} - loss: {float(loss)}")
 
     visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch + 1)
 
-    export_fish_body_json(rendered_path_single, fish_body_mesh)
+    export_fish_body_json(data['output_path'], fish_body_mesh)
 
-def train_fin_mesh(fish_fin_mesh, fish_body_mesh, 
+def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh, 
                    renderer, texture_map,
-                   data, gt_fin_mask):
+                   data, gt_fin_mask, epoch):
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
     alpha_weight = data['hyperparameter']['alpha_weight']
     negative_ys_weight = data['hyperparameter']['negative_ys_weight']
     fin_uv_bound_weight = data['hyperparameter']['fin_uv_bound_weight']
+
+    # set lr according to epoch
+    spline_lr = 0
+    if (epoch > data['hyperparameter']['fin_lr_epoch_1']):
+        spline_lr = data['hyperparameter']['fin_spline_lr_1']
+    if (epoch > data['hyperparameter']['fin_lr_epoch_2']):
+        spline_lr = data['hyperparameter']['fin_spline_lr_2']
+    fish_fin_mesh.set_t_lr(spline_lr)
+    fish_fin_mesh.set_y_lr(spline_lr)
 
     fish_fin_mesh.zero_grad()
     ###fish_body_mesh.update_mesh(lod_x, lod_y)
@@ -322,16 +346,19 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                 print(f'failed to render fin: {fin_name}. the name does not found in the fish_fin_meshes.')
     
     # # print(f"visualize_results: rendered_image.shape = {rendered_image.shape}")
-    ##pylab.imshow(soft_mask[0].repeat(3, 1, 1).permute(1,2,0).cpu().detach())
+    #pylab.imshow(soft_mask[0].repeat(3, 1, 1).permute(1,2,0).cpu().detach())
     pylab.imshow(rendered_image[0].cpu().detach())
     pylab.title(f'epoch: {epoch}')
-    pylab.waitforbuttonpress(0)
-    pylab.cla()
-    
-    ##pylab.close()
 
-    ##pylab.savefig(f"./optimization record/{epoch}.png")
-    ##pylab.close()
+    save_image = True
+    if (save_image):
+        pylab.savefig(f"{data['output_path']}{epoch}.png")
+        pylab.close()
+    else:
+        pylab.waitforbuttonpress(0)
+        pylab.cla()
+
+    
 
 def export_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
     with torch.no_grad():

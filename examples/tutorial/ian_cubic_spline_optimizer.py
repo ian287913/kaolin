@@ -91,6 +91,15 @@ class CubicSplineOptimizer:
         self.optimizer_parameters['scheduler_step_size'] = self.scheduler_step_size
         self.optimizer_parameters['scheduler_gamma'] = self.scheduler_gamma
 
+    def set_y_lr(self, lr):
+        self.y_lr = lr
+        for g in self.key_ys_optim.param_groups:
+            g['lr'] = lr
+    def set_t_lr(self, lr):
+        self.t_lr = lr
+        for g in self.key_ts_optim.param_groups:
+            g['lr'] = lr
+
     def load_from_json_dict(self, json_dict:dict):
         # parameters
         self.set_parameters(np.array(json_dict['parameters']['key_xs']), 

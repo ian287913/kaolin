@@ -84,7 +84,24 @@ class FishFinMesh:
             self.end_dir_optim,
             step_size=scheduler_step_size,
             gamma=scheduler_gamma)
-
+        
+        print(f'self.start_uv_optim.param_groups = {self.start_uv_optim.param_groups}')
+    
+    def set_uv_lr(self, lr):
+        for g in self.start_uv_optim.param_groups:
+            g['lr'] = lr
+        for g in self.end_uv_optim.param_groups:
+            g['lr'] = lr
+    def set_dir_lr(self, lr):
+        for g in self.start_dir_optim.param_groups:
+            g['lr'] = lr
+        for g in self.end_dir_optim.param_groups:
+            g['lr'] = lr
+    def set_y_lr(self, lr):
+        self.sil_spline_optimizer.set_y_lr(lr)
+    def set_t_lr(self, lr):
+        self.sil_spline_optimizer.set_t_lr(lr)
+    
     # penalize uv that is not inside [(0, 0), (1, 1)]
     def calculate_uv_bound_loss(self):
         exceeded_value = torch.tensor((0), dtype=torch.float, device='cuda')
