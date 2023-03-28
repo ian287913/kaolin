@@ -41,7 +41,8 @@ class FishBodyMesh:
                  key_size = 3, y_lr = 5e-1, t_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5,
                  origin_pos_lr = 5e-1, length_xyz_lr = 5e-1
                  ):
-        
+        self.dirty = True
+
         # init top curve and bottom curve
         self.top_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
             key_size,  
@@ -86,6 +87,7 @@ class FishBodyMesh:
                        origin_xy, origin_z,
                        length_x, length_y, length_z,
                        top_spline_json_dict, bottom_spline_json_dict):
+        self.dirty = True
 
         # init top curve and bottom curve
         self.top_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
@@ -154,6 +156,8 @@ class FishBodyMesh:
         self.length_xyz_optim.zero_grad()
 
     def step(self, step_splines = True):
+        self.dirty = True
+        
         if (step_splines == True):
             self.top_spline_optimizer.step()
             self.bottom_spline_optimizer.step()
@@ -210,6 +214,8 @@ class FishBodyMesh:
         assert top_ys.shape[0] > 1, f'top_ys.shape[0] should greater than 1!'
         assert bottom_ys.shape[0] > 1, f'bottom_ys.shape[0] should greater than 1!'
         assert bottom_ys.shape[0] == top_ys.shape[0], f'error: bottom_ys.shape[0] != top_ys.shape[0]'
+
+        self.dirty = False
 
         # expand top_ys to top_xyzs
         top_xs = torch.zeros(top_ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)

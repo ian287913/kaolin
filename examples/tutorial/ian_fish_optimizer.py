@@ -56,7 +56,6 @@ def train_mesh():
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
 
-    num_epoch = 300
     visualize_epoch_interval = 10
 
     key_size = 20
@@ -88,7 +87,7 @@ def train_mesh():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = num_epoch
+    hyperparameter['num_epoch'] = 300
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
     hyperparameter['lod_y'] = lod_y
@@ -108,6 +107,11 @@ def train_mesh():
     hyperparameter['fin_dir_lr'] = fin_dir_lr
     hyperparameter['fin_uv_lr'] = fin_uv_lr
     hyperparameter['fin_uv_bound_weight'] = fin_uv_bound_weight
+
+    # lr control
+    hyperparameter['fin_lr_epoch_list'] = [0, 150]
+    hyperparameter['fin_spline_lr_list'] = [0, 5e-2]
+    hyperparameter['fin_uv_lr_list'] = [5e-3, 5e-5]
 
     hyperparameter['fin_lr_epoch_1'] = 0
     hyperparameter['fin_spline_lr_1'] = 0
@@ -203,10 +207,9 @@ def train_mesh():
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
     
 
-    for epoch in range(num_epoch):
+    for epoch in range(hyperparameter['num_epoch']):
 
         if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
-            fish_body_mesh.update_mesh(lod_x, lod_y)
             visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch)
 
         # train body
@@ -256,8 +259,9 @@ def train_mesh():
         # train fins
         else:
             loss = 0
-            with torch.no_grad():
-                fish_body_mesh.update_mesh(lod_x, lod_y)
+            if(fish_body_mesh.dirty):
+                with torch.no_grad():
+                    fish_body_mesh.update_mesh(lod_x, lod_y)
             for fin_name in data['hyperparameter']['fin_list']:
                 loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, renderer, texture_map, data, data[fin_name + '_mask'], epoch)
 
@@ -286,19 +290,16 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     # set lr according to epoch
     spline_lr = 0
     uv_lr = 0
-    if (epoch > data['hyperparameter']['fin_lr_epoch_1']):
-        spline_lr = data['hyperparameter']['fin_spline_lr_1']
-        uv_lr = data['hyperparameter']['fin_uv_lr_1']
-    if (epoch > data['hyperparameter']['fin_lr_epoch_2']):
-        spline_lr = data['hyperparameter']['fin_spline_lr_2']
-        uv_lr = data['hyperparameter']['fin_uv_lr_2']
+    for idx, lr_epoch in enumerate(data['hyperparameter']['fin_lr_epoch_list']):
+        if (epoch >= lr_epoch):
+            spline_lr = data['hyperparameter']['fin_spline_lr_list'][idx]
+            uv_lr = data['hyperparameter']['fin_uv_lr_list'][idx]
     fish_fin_mesh.set_t_lr(spline_lr)
     fish_fin_mesh.set_y_lr(spline_lr)
     fish_fin_mesh.set_uv_lr(uv_lr)
 
 
     fish_fin_mesh.zero_grad()
-    ###fish_body_mesh.update_mesh(lod_x, lod_y)
     fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
     rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
         elev = data['metadata']['cam_elev'], 
@@ -345,7 +346,8 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
 
     rendered_image = None
     with torch.no_grad():
-        fish_body_mesh.update_mesh(lod_x, lod_y)
+        if (fish_body_mesh.dirty):
+            fish_body_mesh.update_mesh(lod_x, lod_y)
         # body
         rendered_body_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
             elev = data['metadata']['cam_elev'], 
