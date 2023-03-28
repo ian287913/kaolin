@@ -28,7 +28,8 @@ import ian_fish_body_mesh
 def train_mesh():
     # Hyperparameters
     image_weight = 0
-    alpha_weight = 200
+    ###alpha_weight = 200
+    alpha_weight = 4.87
     negative_ys_weight = 2 # this will cause explosion!
     y_lr = 5e-2
     t_lr = 5e-2
@@ -87,7 +88,7 @@ def train_mesh():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 300
+    hyperparameter['num_epoch'] = 400
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
     hyperparameter['lod_y'] = lod_y
@@ -109,26 +110,14 @@ def train_mesh():
     hyperparameter['fin_uv_bound_weight'] = fin_uv_bound_weight
 
     # lr control
-    hyperparameter['fin_lr_epoch_list'] = [0, 150]
-    hyperparameter['fin_spline_lr_list'] = [0, 5e-2]
-    hyperparameter['fin_uv_lr_list'] = [5e-3, 5e-5]
-
-    hyperparameter['fin_lr_epoch_1'] = 0
-    hyperparameter['fin_spline_lr_1'] = 0
-    hyperparameter['fin_uv_lr_1'] = 5e-3
-    # hyperparameter['fin_spline_lr_1'] = 5e-2
-    # hyperparameter['fin_uv_lr_1'] = 5e-3
-
-    hyperparameter['fin_lr_epoch_2'] = 150
-    hyperparameter['fin_spline_lr_2'] = 5e-2
-    hyperparameter['fin_uv_lr_2'] = 5e-5
-    # hyperparameter['fin_spline_lr_2'] = 5e-2
-    # hyperparameter['fin_uv_lr_2'] = 5e-3
+    hyperparameter['fin_lr_epoch_list'] = [0, 150, 300, 350]
+    hyperparameter['fin_spline_lr_list'] = [0, 5e-2, 0, 0]
+    hyperparameter['fin_uv_lr_list'] = [5e-3, 5e-5, 0, 5e-2]
+    hyperparameter['fin_dir_lr_list'] = [5e-2, 5e-2, 5e-2, 0]
     
     data['hyperparameter'] = hyperparameter
 
     data['rendered_path'] = rendered_path_single
-    
     data['output_path'] = output_path
 
 
@@ -195,8 +184,8 @@ def train_mesh():
         dir_lr=fin_dir_lr,
         start_uv=[0.5, 0.3], end_uv=[0.5, 0.5])
     
-    ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
-    fin_list = ['pectoral_fin']
+    fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
+    fin_list = ['anal_fin']
     data['hyperparameter']['fin_list'] = fin_list
 
     # # load saved fins
@@ -312,7 +301,9 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
         texture_map=texture_map)
 
     ### Compute Losses ###
-    alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
+    ##alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
+    alpha_loss = kal.metrics.render.mask_iou(soft_mask, gt_fin_mask[:,:,0].cuda().unsqueeze(0))
+    
 
     sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
     negative_ys_loss = sil_spline_negative_ys_loss
@@ -397,7 +388,7 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
     pylab.title(f'epoch: {epoch}')
 
     # save or show image
-    save_image = False
+    save_image = True
     if (save_image):
         fig_path = f"{data['output_path']}{epoch}.png"
         pylab.savefig(fig_path)
@@ -420,7 +411,7 @@ def export_hyperparameter_json(path, hyperparameter):
     converted_export_dict = ian_utils.convert_tensor_dict(export_dict.copy())
     print(f"converted_export_dict = {converted_export_dict}")
 
-    filepath = os.path.join(path,'pyperparameter.json')
+    filepath = os.path.join(path,'hyperparameter.json')
     with open(filepath, 'w') as fp:
         json.dump(converted_export_dict, fp, indent=4)
     print(f'file exported to {filepath}.')
