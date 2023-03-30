@@ -11,6 +11,7 @@ echo commands:
 echo f: fish optimizer
 echo s: spline optimizer
 echo c: cls
+echo e: exit
 
 set command=none
 set /p command=
@@ -21,9 +22,11 @@ if "%command%" == "f" (
 ) else if "%command%" == "c" (
 	cls
 	goto PromptUser
+) else if "%command%" == "e" (
+	goto EndBatch
 ) else (
 	echo skipped unknown command: %command%
-	goto EndBatch
+	goto PromptUser
 )
 
 :RunFishOptimizer
