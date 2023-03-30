@@ -28,9 +28,9 @@ import ian_fish_body_mesh
 def train_mesh():
     # Hyperparameters
     image_weight = 0
-    ###alpha_weight = 200
-    alpha_weight = 4.87
-    negative_ys_weight = 2 # this will cause explosion!
+    alpha_weight = 200
+    ###alpha_weight = 4.87 # for IOU
+    negative_ys_weight = 1 # this will cause explosion!
     y_lr = 5e-2
     t_lr = 5e-2
     scheduler_step_size = 20
@@ -39,7 +39,8 @@ def train_mesh():
     length_xyz_lr = 5e-2
     render_res = 512
     texture_res = 512
-    sigmainv = 14000 # 3000~30000, for soft mask, higher sharper
+    ##sigmainv = 14000 # 3000~30000, for soft mask, higher sharper
+    sigmainv = 25000 # 3000~30000, for soft mask, higher sharper
 
     spline_start_train_epoch = 0
 
@@ -60,8 +61,8 @@ def train_mesh():
     visualize_epoch_interval = 10
 
     key_size = 20
-    lod_x = 40
-    lod_y = 20
+    lod_x = 60
+    lod_y = 10
 
     # texture map
     # imported_texture_map = ian_utils.import_rgb(os.path.join(rendered_path_single, f'{0}_texture.png'))
@@ -88,7 +89,7 @@ def train_mesh():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 400
+    hyperparameter['num_epoch'] = 50
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
     hyperparameter['lod_y'] = lod_y
@@ -110,10 +111,10 @@ def train_mesh():
     hyperparameter['fin_uv_bound_weight'] = fin_uv_bound_weight
 
     # lr control
-    hyperparameter['fin_lr_epoch_list'] = [0, 150, 300, 350]
-    hyperparameter['fin_spline_lr_list'] = [0, 5e-2, 0, 0]
-    hyperparameter['fin_uv_lr_list'] = [5e-3, 5e-5, 0, 5e-2]
-    hyperparameter['fin_dir_lr_list'] = [5e-2, 5e-2, 5e-2, 0]
+    hyperparameter['fin_lr_epoch_list'] =   [0,     150,    300,    40000]
+    hyperparameter['fin_spline_lr_list'] =  [0,     5e-2,   3e-2,   5e-3]
+    hyperparameter['fin_uv_lr_list'] =      [5e-3,  5e-5,   5e-3,   5e-4]
+    hyperparameter['fin_dir_lr_list'] =     [5e-2,  5e-3,   0,      0]
     
     data['hyperparameter'] = hyperparameter
 
@@ -164,7 +165,8 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0.3, 0], end_uv=[0.05, 0])
+        start_uv=[0.3, 0], end_uv=[0.05, 0],
+        init_height=0.2)
     fish_fin_meshes['pelvic_fin'] = ian_fish_fin_mesh.FishFinMesh(
         key_size, 
         y_lr=y_lr, 
@@ -184,7 +186,7 @@ def train_mesh():
         dir_lr=fin_dir_lr,
         start_uv=[0.5, 0.3], end_uv=[0.5, 0.5])
     
-    fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
+    ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
     fin_list = ['anal_fin']
     data['hyperparameter']['fin_list'] = fin_list
 
@@ -195,9 +197,17 @@ def train_mesh():
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
     
+    loss_history = []
 
     for epoch in range(hyperparameter['num_epoch']):
+        # try to expand fin dir
+        if (epoch == 300 or epoch == 400000):
+            for fin_name in data['hyperparameter']['fin_list']:
+                fin:ian_fish_fin_mesh.FishFinMesh = fish_fin_meshes[fin_name]
+                fin.reset_dir(fin.start_dir + 0.3, fin.end_dir - 0.3)
+        
 
+        # print result
         if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
             visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch)
 
@@ -255,8 +265,11 @@ def train_mesh():
                 loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, renderer, texture_map, data, data[fin_name + '_mask'], epoch)
 
         print(f"Epoch {epoch} - loss: {float(loss)}")
+        loss_history.append(loss.detach().cpu().numpy().tolist())
+
 
     visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch + 1)
+    visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch + 1, True)
 
     # export stuff
     export_fish_body_json(data['output_path'], fish_body_mesh)
@@ -264,6 +277,8 @@ def train_mesh():
         export_fish_fin_json(data['output_path'], fish_fin_meshes[fin_name], fin_name)
 
     export_hyperparameter_json(data['output_path'], data['hyperparameter'])
+
+    export_loss_history(data['output_path'], loss_history)
 
 
 
@@ -279,13 +294,18 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     # set lr according to epoch
     spline_lr = 0
     uv_lr = 0
+    dir_lr = 0
     for idx, lr_epoch in enumerate(data['hyperparameter']['fin_lr_epoch_list']):
         if (epoch >= lr_epoch):
             spline_lr = data['hyperparameter']['fin_spline_lr_list'][idx]
             uv_lr = data['hyperparameter']['fin_uv_lr_list'][idx]
+            dir_lr = data['hyperparameter']['fin_dir_lr_list'][idx]
+            
+
     fish_fin_mesh.set_t_lr(spline_lr)
     fish_fin_mesh.set_y_lr(spline_lr)
     fish_fin_mesh.set_uv_lr(uv_lr)
+    fish_fin_mesh.set_dir_lr(dir_lr)
 
 
     fish_fin_mesh.zero_grad()
@@ -301,8 +321,8 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
         texture_map=texture_map)
 
     ### Compute Losses ###
-    ##alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
-    alpha_loss = kal.metrics.render.mask_iou(soft_mask, gt_fin_mask[:,:,0].cuda().unsqueeze(0))
+    alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
+    ##alpha_loss = kal.metrics.render.mask_iou(soft_mask, gt_fin_mask[:,:,0].cuda().unsqueeze(0))
     
 
     sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
@@ -318,7 +338,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
 
     return loss
 
-def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_meshes, renderer:ian_renderer.Renderer, texture_map, data, epoch = 0):
+def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_meshes, renderer:ian_renderer.Renderer, texture_map, data, epoch = 0, add_gt = False):
     
     # print(f"fish_body_mesh.top_spline_optimizer.key_ys = {fish_body_mesh.top_spline_optimizer.key_ys}")
     # print(f"fish_body_mesh.top_spline_optimizer.key_ts = {fish_body_mesh.top_spline_optimizer.key_ts}")
@@ -382,15 +402,26 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
             else:
                 print(f'failed to render fin: {fin_name}. the name does not found in the fish_fin_meshes.')
     
+    image_name = str(epoch)
+
+    # gt
+    gt_fin_draw_color = (0.5, 0.5, 0.5)
+    if (add_gt):
+        image_name += "_with_gt"
+        for fin_name in data['hyperparameter']['fin_list']:
+            if (fin_name in fish_fin_meshes):
+                gt_fin_mask = data[fin_name + '_mask'].cuda()
+                rendered_image += gt_fin_mask * torch.tensor(gt_fin_draw_color, dtype=torch.float, device='cuda', requires_grad=False)
+
     # # print(f"visualize_results: rendered_image.shape = {rendered_image.shape}")
     #pylab.imshow(soft_mask[0].repeat(3, 1, 1).permute(1,2,0).cpu().detach())
     pylab.imshow(rendered_image[0].cpu().detach())
-    pylab.title(f'epoch: {epoch}')
+    pylab.title(f'epoch: {image_name}')
 
     # save or show image
     save_image = True
     if (save_image):
-        fig_path = f"{data['output_path']}{epoch}.png"
+        fig_path = f"{data['output_path']}{image_name}.png"
         pylab.savefig(fig_path)
         pylab.close()
         print(f'fig saved at {fig_path}')
@@ -420,6 +451,13 @@ def import_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
     mesh.import_from_json(path)
 def import_fish_fin_json(path, mesh:ian_fish_fin_mesh.FishFinMesh, fin_name):
     mesh.import_from_json(path, fin_name)
+
+def export_loss_history(path, loss_history):
+    filepath = os.path.join(path,'loss_history.txt')
+    with open(filepath, 'w') as fp:
+        for loss in loss_history:
+            fp.write(str(loss) + "\n")
+    print(f'file exported to {filepath}.')
 
 if __name__ == "__main__":
     start_time = time.time()

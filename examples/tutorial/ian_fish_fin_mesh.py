@@ -170,6 +170,14 @@ class FishFinMesh:
         self.optimizer_parameters['scheduler_step_size'] = self.scheduler_step_size
         self.optimizer_parameters['scheduler_gamma'] = self.scheduler_gamma
 
+    def reset_dir(self, start_dir, end_dir):
+        self.set_parameters(self.parameters['start_uv'], self.parameters['end_uv'], 
+                            start_dir, end_dir, 
+                            self.parameters['init_height'],
+                            ian_utils.convert_tensor_dict(self.parameters['sil_spline'].copy()))
+        
+        self.set_optimizer(self.optimizer_parameters['scheduler_step_size'], self.optimizer_parameters['scheduler_gamma'],
+                           self.optimizer_parameters['uv_lr'], self.optimizer_parameters['dir_lr'])
 
     def set_uv_lr(self, lr):
         for g in self.start_uv_optim.param_groups:
