@@ -51,12 +51,13 @@ def init_plot():
     klicker = clicker(ax, ["start", "end"], markers=["o", "x"])
 
     # button
-    axnext = fig.add_axes([0.81, 0.05, 0.1, 0.075])
+    axnext = fig.add_axes([0.85, 0.5, 0.1, 0.075])
     bnext = Button(axnext, 'Next')
     bnext.on_clicked(switch_mask)
 
     # slider
-    axslider = fig.add_axes([0.25, 0.1, 0.65, 0.03])
+    plt.subplots_adjust(bottom=0.2, left=0.1, top=0.9)
+    axslider = fig.add_axes([0.2, 0.05, 0.55, 0.05])
     opaque_slider = Slider(
         ax=axslider,
         label='Opacity',
@@ -66,6 +67,13 @@ def init_plot():
     )
     opaque_slider.on_changed(update_image)
 
+    ##fig.tight_layout()
+    # plt.subplots_adjust(left=0.125,
+    #                 bottom=0.1, 
+    #                 right=0.9, 
+    #                 top=0.9, 
+    #                 wspace=0.2, 
+    #                 hspace=0.35)
 
     plt.show() 
 
