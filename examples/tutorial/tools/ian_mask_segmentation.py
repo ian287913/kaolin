@@ -6,6 +6,13 @@ from matplotlib.widgets import Button
 from matplotlib.widgets import Slider
 import glob
 import os
+import json
+import sys
+from os import path
+sys.path.append( path.dirname( path.dirname( path.abspath(__file__) ) ) )
+import ian_utils
+
+# the axis: upper-left = (0,0) lower-right = (1,1)
 
 rgb_name = "0_rgb.png"
 mask_name = "*_mask.png"
@@ -20,6 +27,8 @@ ax:plt.Axes = None
 klicker:clicker = None
 opaque_slider:Slider = None
 axesimg = None
+
+marked_roots = {}
 
 def load_image(path):
     loaded_image = plt.imread(path)
@@ -73,12 +82,21 @@ def init_plot():
     opaque_slider.on_changed(update_image)
 
     update_image(None)
-    
+
     plt.show() 
 
 def switch_mask(event):
     global current_image_idx
+    global marked_roots
 
+    # validate selection
+    points = klicker.get_positions()['start']
+    if (len(points) < 2):
+        print("failed to save with less than 2 points!")
+        return
+    
+    # save and reset selected points
+    marked_roots[list(mask_dict.keys())[current_image_idx]] = points
     klicker.set_positions({'start':[], 'end':[]})
 
     current_image_idx += 1
@@ -86,6 +104,23 @@ def switch_mask(event):
         update_image(None)
     else:
         print("end of masks.")
+        plt.close()
+        save_segmentation()
+
+def save_segmentation():
+    global marked_roots
+    image_width = list(mask_dict.values())[0].shape[0]
+    image_height = list(mask_dict.values())[0].shape[1]
+    for roots in marked_roots.values():
+        roots[:,0] = roots[:,0] / image_width
+        roots[:,1] = 1 - (roots[:,1] / image_height)
+    converted_export_dict = ian_utils.convert_tensor_dict(marked_roots)
+
+    filepath = os.path.join(loading_dir,'marked_roots.json')
+    with open(filepath, 'w') as fp:
+        json.dump(converted_export_dict, fp, indent=4)
+    print(f'file exported to {filepath}.')
+
 
 def set_current_image(idx):
     global current_image
