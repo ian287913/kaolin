@@ -137,6 +137,22 @@ def import_segment_mask(path: Path):
         print(f"failed to load body_mask: file {path} does not exist.")
         return None
 
+def import_root_segmentation(path: Path, data_idx):
+    if not os.path.exists(path):
+        return None
+    
+    with open(path, 'r') as f:
+        froot_segs = json.load(f)
+        parsed_root_segs = {}
+        for key, value in froot_segs.items():
+            parsed_key = key
+            if (parsed_key.endswith('.png')):
+                parsed_key = parsed_key[:-4]
+            if (parsed_key.startswith(f'{data_idx}_')):
+                parsed_key = parsed_key[len(f'{data_idx}_'):]
+            parsed_root_segs[parsed_key] = value
+    return parsed_root_segs
+
 def load_rendered_png_and_camera_data(root_dir: Path, data_idx: int = 0):
     # resolution follows 'rgb'
     output = {}
@@ -164,6 +180,12 @@ def load_rendered_png_and_camera_data(root_dir: Path, data_idx: int = 0):
     pectoral_fin_mask = import_segment_mask(os.path.join(root_dir, f'{data_idx}_pectoral_fin_mask.png'))
     if (pectoral_fin_mask is not None):
         output['pectoral_fin_mask'] = pectoral_fin_mask
+    
+    root_segmentation = import_root_segmentation(os.path.join(root_dir, 'marked_roots.json'), data_idx)
+    if (root_segmentation is not None):
+        output['root_segmentation'] = root_segmentation
+    
+    print(f'root_segmentation = {root_segmentation}')
 
     with open(os.path.join(root_dir, f'{data_idx}_metadata.json'), 'r') as f:
         fmetadata = json.load(f)
