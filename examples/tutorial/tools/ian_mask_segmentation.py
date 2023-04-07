@@ -41,6 +41,7 @@ def init_plot():
     global ax
     global klicker
     global opaque_slider
+
     # set plot
     fig, ax = plt.subplots()
     ax.imshow(current_image)
@@ -58,27 +59,28 @@ def init_plot():
     # slider
     plt.subplots_adjust(bottom=0.2, left=0.1, top=0.9)
     axslider = fig.add_axes([0.2, 0.05, 0.55, 0.05])
+
+    last_opaque_val = 0.5
+    if (opaque_slider is not None):
+        last_opaque_val = opaque_slider.val
     opaque_slider = Slider(
         ax=axslider,
         label='Opacity',
         valmin=0.0,
         valmax=1.0,
-        valinit=0.5,
+        valinit=last_opaque_val,
     )
     opaque_slider.on_changed(update_image)
 
-    ##fig.tight_layout()
-    # plt.subplots_adjust(left=0.125,
-    #                 bottom=0.1, 
-    #                 right=0.9, 
-    #                 top=0.9, 
-    #                 wspace=0.2, 
-    #                 hspace=0.35)
-
+    update_image(None)
+    
     plt.show() 
 
 def switch_mask(event):
     global current_image_idx
+
+    klicker.set_positions({'start':[], 'end':[]})
+
     current_image_idx += 1
     if (set_current_image(current_image_idx) == True):
         update_image(None)
@@ -97,10 +99,12 @@ def set_current_image(idx):
 def update_image(event):
     global current_image
     global overlay_image
+    global fig
     global axesimg
 
     ##ax.cla() # this will kill the klicker!
-    combined_image = current_image + (overlay_image * opaque_slider.val)
+    combined_image = (current_image * (1 - opaque_slider.val)) + (overlay_image * opaque_slider.val)
+    combined_image = combined_image.clip(max=1.0)
 
     if (axesimg is None):
         axesimg = ax.imshow(combined_image)
@@ -124,7 +128,7 @@ def main():
         print(f"maskname: {mask_name}")
 
     set_current_image(0)
-
+    
     init_plot()
 
 
