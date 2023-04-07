@@ -166,10 +166,6 @@ def main():
     
     init_plot()
 
-
-
-    print(klicker.get_positions())
-
     print("end of main")
 
 
