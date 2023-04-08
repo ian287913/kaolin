@@ -239,6 +239,12 @@ class FishFinMesh:
         self.start_dir_scheduler.step()
         self.end_dir_scheduler.step()
 
+    def get_start_and_end_position(self, body_mesh: ian_fish_body_mesh.FishBodyMesh):
+        clamped_start_uv = torch.clamp(self.start_uv, 0, 1)
+        clamped_end_uv = torch.clamp(self.end_uv, 0, 1)
+        start_xyz = body_mesh.get_position_by_uv(clamped_start_uv)
+        end_xyz = body_mesh.get_position_by_uv(clamped_end_uv)
+        return (start_xyz, end_xyz)
 
     def update_mesh(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, lod_x, lod_y):
         clamped_start_uv = torch.clamp(self.start_uv, 0, 1)
@@ -268,7 +274,7 @@ class FishFinMesh:
             grow_dir = normalize(stacked_grow_dir, p=2.0, dim=0) * ys[idx]
             grow_dirs = torch.cat((grow_dirs, grow_dir.unsqueeze(0)), 0)
 
-        # rotate grow_xyzs
+        # rotate grow_xyzs by lerped start_dir and end_dir
         rotated_grow_xyzs = self.rotate_grow_xyzs(grow_dirs)
 
 

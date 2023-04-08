@@ -144,6 +144,20 @@ class Renderer:
         self.render_res = render_res
         self.background = torch.ones(render_res).to(device).float()
 
+    def project_vertices_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, vertices):
+        cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
+        cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
+
+        # pad vertices from xyz to xyzw
+        padded_vertices = torch.nn.functional.pad(
+            vertices, (0, 1), mode='constant', value=1.
+        )
+        vertices_camera = (padded_vertices @ cam_transform)
+        # Project the vertices on the camera image plan
+        vertices_image = kal.render.camera.perspective_camera(vertices_camera, cam_proj)
+
+        return vertices_image
+
 
     def render_image_and_mask_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, mesh, sigmainv = 7000, texture_map = None):
         cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()

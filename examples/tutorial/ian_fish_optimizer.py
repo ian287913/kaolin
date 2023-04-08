@@ -310,6 +310,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
 
     fish_fin_mesh.zero_grad()
     fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+    # render the fin
     rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
         elev = data['metadata']['cam_elev'], 
         azim = data['metadata']['cam_azim'], 
@@ -319,11 +320,16 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
         mesh = fish_fin_mesh,
         sigmainv = data['metadata']['sigmainv'],
         texture_map=texture_map)
+    
+    # get the projected root positions
+    start_xyz, end_xyz = fish_fin_mesh.get_start_and_end_positions(fish_body_mesh)
+    # TODO...
 
     ### Compute Losses ###
     alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
     ##alpha_loss = kal.metrics.render.mask_iou(soft_mask, gt_fin_mask[:,:,0].cuda().unsqueeze(0))
     
+    # TODO: root xy loss
 
     sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
     negative_ys_loss = sil_spline_negative_ys_loss
