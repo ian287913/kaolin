@@ -278,6 +278,27 @@ class FishBodyMesh:
         self.face_uvs = kal.ops.mesh.index_vertices_by_faces(self.uvs, self.face_uvs_idx).detach()
         self.face_uvs.requires_grad = False
 
+    def get_start_and_end_positions(self):
+        start_xyz = torch.cat((self.origin_xy, self.origin_z.unsqueeze(0)), 0)
+        length_xyz = torch.cat((self.length_x.unsqueeze(0), self.length_y.unsqueeze(0), self.length_z.unsqueeze(0)), 0)
+        end_xyz = start_xyz + length_xyz
+        return (start_xyz, end_xyz)
+    
+    def get_projected_start_and_end_positions(self, renderer:ian_renderer.Renderer, metadata:dict):
+        start_xyz, end_xyz = self.get_start_and_end_positions()
+        projected_root_xys = renderer.project_vertices_with_camera_params(
+            elev = metadata['cam_elev'], 
+            azim = metadata['cam_azim'], 
+            r = metadata['cam_radius'], 
+            look_at_height = metadata['cam_look_at_height'], 
+            fovyangle = metadata['cam_fovyangle'],
+            vertices = torch.stack((start_xyz, end_xyz), dim=0),
+        ).squeeze(0)
+        projected_start_xy = ((projected_root_xys[0] + 1.)/2.)
+        projected_end_xy = ((projected_root_xys[1] + 1.)/2.)
+        return (projected_start_xy, projected_end_xy)
+
+
     def export_to_json(self, path):
         export_dict = {}
         export_dict['parameters'] = self.parameters

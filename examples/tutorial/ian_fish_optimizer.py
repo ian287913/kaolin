@@ -29,6 +29,7 @@ def train_mesh():
     # Hyperparameters
     image_weight = 0
     alpha_weight = 200
+    root_pos_weight = 100
     ###alpha_weight = 4.87 # for IOU
     negative_ys_weight = 1 # this will cause explosion!
     y_lr = 5e-2
@@ -49,7 +50,7 @@ def train_mesh():
     fin_dir_lr = 5e-2
     fin_uv_lr = 5e-3
     # fin_dir_lr = 5e-2
-    fin_start_train_epoch = 0
+    fin_start_train_epoch = 100
     fin_uv_bound_weight = 100
 
     # parameters
@@ -58,7 +59,7 @@ def train_mesh():
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
 
-    visualize_epoch_interval = 10
+    visualize_epoch_interval = 5
 
     key_size = 20
     lod_x = 60
@@ -100,6 +101,7 @@ def train_mesh():
 
     hyperparameter['image_weight'] = image_weight
     hyperparameter['alpha_weight'] = alpha_weight
+    hyperparameter['root_pos_weight'] = root_pos_weight
     hyperparameter['negative_ys_weight'] = negative_ys_weight
     hyperparameter['y_lr'] = y_lr
     hyperparameter['t_lr'] = t_lr
@@ -197,8 +199,8 @@ def train_mesh():
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
     
+    ##################################### TRAINING #####################################
     loss_history = []
-
     for epoch in range(hyperparameter['num_epoch']):
         # try to expand fin dir
         if (epoch == 300 or epoch == 400000):
@@ -215,6 +217,8 @@ def train_mesh():
         if (epoch < fin_start_train_epoch):
             fish_body_mesh.zero_grad()
             fish_body_mesh.update_mesh(lod_x, lod_y)
+
+            # render mesh
             rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
                 elev = data['metadata']['cam_elev'], 
                 azim = data['metadata']['cam_azim'], 
@@ -224,6 +228,10 @@ def train_mesh():
                 mesh = fish_body_mesh,
                 sigmainv = data['metadata']['sigmainv'],
                 texture_map=texture_map)
+            
+            # calculate projected root position
+            projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
+            
 
             ### Compute Losses ###
             image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
@@ -300,7 +308,6 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
             spline_lr = data['hyperparameter']['fin_spline_lr_list'][idx]
             uv_lr = data['hyperparameter']['fin_uv_lr_list'][idx]
             dir_lr = data['hyperparameter']['fin_dir_lr_list'][idx]
-            
 
     fish_fin_mesh.set_t_lr(spline_lr)
     fish_fin_mesh.set_y_lr(spline_lr)
@@ -378,6 +385,13 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
         # set body to blue
         rendered_image = rendered_body_image * torch.tensor((0, 0, 1), dtype=torch.float, device='cuda', requires_grad=False)
 
+        # calculate projected root position
+        projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
+        print(f'projected_start_xy = {projected_start_xy}')
+        print(f'projected_end_xy = {projected_end_xy}')
+        pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], projected_start_xy[1].cpu() * renderer.render_res[1], marker='4')
+        pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], projected_end_xy[1].cpu() * renderer.render_res[1], marker='3')
+
         # fin
         for fin_name in data['hyperparameter']['fin_list']:
             if (fin_name in fish_fin_meshes):
@@ -425,7 +439,7 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
     pylab.title(f'epoch: {image_name}')
 
     # save or show image
-    save_image = True
+    save_image = False
     if (save_image):
         fig_path = f"{data['output_path']}{image_name}.png"
         pylab.savefig(fig_path)
