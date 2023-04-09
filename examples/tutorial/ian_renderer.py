@@ -144,11 +144,12 @@ class Renderer:
         self.render_res = render_res
         self.background = torch.ones(render_res).to(device).float()
 
+    # project XYZ world space position to XY camera plane position
     def project_vertices_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, vertices):
         cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
         cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
 
-        # pad vertices from xyz to xyzw
+        # pad vertices from XYZ to XYZW
         padded_vertices = torch.nn.functional.pad(
             vertices, (0, 1), mode='constant', value=1.
         )
