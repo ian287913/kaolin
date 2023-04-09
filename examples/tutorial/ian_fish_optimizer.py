@@ -78,11 +78,6 @@ def train_mesh():
     data['metadata']['sigmainv'] = sigmainv
     gt_rgb : torch.Tensor = data['rgb'].cuda()
     gt_alpha : torch.Tensor = data['alpha'].cuda()
-    gt_body_mask : torch.Tensor = data['body_mask'].cuda()
-    if 'dorsal_fin_mask' in data :
-        gt_dorsal_fin_mask : torch.Tensor = data['dorsal_fin_mask'].cuda()
-    else:
-        gt_dorsal_fin_mask : torch.Tensor = None
 
     # update render_res
     render_res = gt_rgb.shape[0]
@@ -230,19 +225,30 @@ def train_mesh():
                 texture_map=texture_map)
             
             # calculate projected root position
-            projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
-            
+            projected_start_root_xy, projected_end_root_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
+            gt_body_mask_root_xys = data['root_segmentation']['body_mask']
+            gt_start_root_xy = torch.tensor(gt_body_mask_root_xys[0], dtype=torch.float, device='cuda', requires_grad=False)
+            gt_end_root_xy = torch.tensor(gt_body_mask_root_xys[1], dtype=torch.float, device='cuda', requires_grad=False)
+            ### root pos loss ###
+            root_pos_loss = 0
+            root_pos_loss += torch.linalg.norm((projected_start_root_xy - gt_start_root_xy), ord=1)
+            root_pos_loss += torch.linalg.norm((projected_end_root_xy - gt_end_root_xy), ord=1)
 
             ### Compute Losses ###
             image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
 
-            alpha_loss = torch.mean(torch.abs(soft_mask - gt_body_mask[:,:,0]))
+            alpha_loss = torch.mean(torch.abs(soft_mask - data['body_mask'][:,:,0].cuda()))
+
+
 
             top_spline_negative_ys_loss = fish_body_mesh.top_spline_optimizer.calculate_negative_ys_loss(lod_x)
             bottom_spline_negative_ys_loss = fish_body_mesh.bottom_spline_optimizer.calculate_negative_ys_loss(lod_x)
             negative_ys_loss = top_spline_negative_ys_loss + bottom_spline_negative_ys_loss
 
-            loss = (image_loss * image_weight + alpha_loss * alpha_weight + negative_ys_loss * negative_ys_weight)
+            loss = (image_loss * image_weight + 
+                    alpha_loss * alpha_weight + 
+                    negative_ys_loss * negative_ys_weight +
+                    root_pos_loss * root_pos_weight)
 
 
             # # dump graph
@@ -270,7 +276,10 @@ def train_mesh():
                 with torch.no_grad():
                     fish_body_mesh.update_mesh(lod_x, lod_y)
             for fin_name in data['hyperparameter']['fin_list']:
-                loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, renderer, texture_map, data, data[fin_name + '_mask'], epoch)
+                loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, 
+                                       renderer, texture_map, 
+                                       data, data[fin_name + '_mask'], data['root_segmentation'][fin_name + '_mask'], 
+                                       epoch)
 
         print(f"Epoch {epoch} - loss: {float(loss)}")
         loss_history.append(loss.detach().cpu().numpy().tolist())
@@ -292,7 +301,8 @@ def train_mesh():
 
 def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh, 
                    renderer, texture_map,
-                   data, gt_fin_mask, epoch):
+                   data, gt_fin_mask, gt_fin_mask_root_xys, 
+                   epoch):
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
     alpha_weight = data['hyperparameter']['alpha_weight']
@@ -330,6 +340,8 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     
     # get the projected root positions
     start_xyz, end_xyz = fish_fin_mesh.get_start_and_end_positions(fish_body_mesh)
+    gt_start_xyz = gt_fin_mask_root_xys[0]
+    gt_end_xyz = gt_fin_mask_root_xys[1]
     # TODO...
 
     ### Compute Losses ###
@@ -389,8 +401,12 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
         projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
         print(f'projected_start_xy = {projected_start_xy}')
         print(f'projected_end_xy = {projected_end_xy}')
-        pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], projected_start_xy[1].cpu() * renderer.render_res[1], marker='4')
-        pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], projected_end_xy[1].cpu() * renderer.render_res[1], marker='3')
+        pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], projected_start_xy[1].cpu() * renderer.render_res[1], marker='4', color='royalblue')
+        pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], projected_end_xy[1].cpu() * renderer.render_res[1], marker='3', color='royalblue')
+
+        gt_body_mask_root_xys = data['root_segmentation']['body_mask']
+        pylab.plot(gt_body_mask_root_xys[0][0] * renderer.render_res[0], gt_body_mask_root_xys[0][1] * renderer.render_res[1], marker='4', color='white')
+        pylab.plot(gt_body_mask_root_xys[1][0] * renderer.render_res[0], gt_body_mask_root_xys[1][1] * renderer.render_res[1], marker='3', color='white')
 
         # fin
         for fin_name in data['hyperparameter']['fin_list']:

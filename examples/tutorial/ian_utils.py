@@ -185,7 +185,6 @@ def load_rendered_png_and_camera_data(root_dir: Path, data_idx: int = 0):
     if (root_segmentation is not None):
         output['root_segmentation'] = root_segmentation
     
-    print(f'root_segmentation = {root_segmentation}')
 
     with open(os.path.join(root_dir, f'{data_idx}_metadata.json'), 'r') as f:
         fmetadata = json.load(f)
