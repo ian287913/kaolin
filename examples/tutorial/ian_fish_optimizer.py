@@ -50,7 +50,7 @@ def train_mesh():
     fin_dir_lr = 5e-2
     fin_uv_lr = 5e-3
     # fin_dir_lr = 5e-2
-    fin_start_train_epoch = 100
+    fin_start_train_epoch = 10000
     fin_uv_bound_weight = 100
 
     # parameters
@@ -59,7 +59,7 @@ def train_mesh():
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
 
-    visualize_epoch_interval = 5
+    visualize_epoch_interval = 10
 
     key_size = 20
     lod_x = 60
@@ -85,7 +85,7 @@ def train_mesh():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 50
+    hyperparameter['num_epoch'] = 500
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
     hyperparameter['lod_y'] = lod_y
@@ -184,7 +184,7 @@ def train_mesh():
         start_uv=[0.5, 0.3], end_uv=[0.5, 0.5])
     
     ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
-    fin_list = ['anal_fin']
+    fin_list = []
     data['hyperparameter']['fin_list'] = fin_list
 
     # # load saved fins
@@ -308,6 +308,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     alpha_weight = data['hyperparameter']['alpha_weight']
     negative_ys_weight = data['hyperparameter']['negative_ys_weight']
     fin_uv_bound_weight = data['hyperparameter']['fin_uv_bound_weight']
+    root_pos_weight = data['hyperparameter']['root_pos_weight']
 
     # set lr according to epoch
     spline_lr = 0
@@ -339,10 +340,13 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
         texture_map=texture_map)
     
     # get the projected root positions
-    start_xyz, end_xyz = fish_fin_mesh.get_start_and_end_positions(fish_body_mesh)
-    gt_start_xyz = gt_fin_mask_root_xys[0]
-    gt_end_xyz = gt_fin_mask_root_xys[1]
-    # TODO...
+    projected_start_root_xy, projected_end_root_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
+    gt_start_root_xy = torch.tensor(gt_fin_mask_root_xys[0], dtype=torch.float, device='cuda', requires_grad=False)
+    gt_end_root_xy = torch.tensor(gt_fin_mask_root_xys[1], dtype=torch.float, device='cuda', requires_grad=False)
+    ### root pos loss ###
+    root_pos_loss = 0
+    root_pos_loss += torch.linalg.norm((projected_start_root_xy - gt_start_root_xy), ord=1)
+    root_pos_loss += torch.linalg.norm((projected_end_root_xy - gt_end_root_xy), ord=1)
 
     ### Compute Losses ###
     alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
@@ -354,7 +358,10 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     negative_ys_loss = sil_spline_negative_ys_loss
     fin_uv_bound_loss = fish_fin_mesh.calculate_uv_bound_loss()
 
-    loss = (alpha_loss * alpha_weight + negative_ys_loss * negative_ys_weight + fin_uv_bound_loss * fin_uv_bound_weight)
+    loss = (alpha_loss * alpha_weight + 
+            negative_ys_loss * negative_ys_weight + 
+            fin_uv_bound_loss * fin_uv_bound_weight+
+            root_pos_loss * root_pos_weight)
 
     ### Update the parameters ###
     loss.backward()
@@ -433,7 +440,9 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                 projected_start_xy, projected_end_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
                 pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='*', color='salmon')
                 pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='x', color='salmon')
-
+                gt_fin_mask_root_xys = data['root_segmentation'][f'{fin_name}_mask']
+                pylab.plot(gt_fin_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[0][1]) * renderer.render_res[1], marker='*', color='white')
+                pylab.plot(gt_fin_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[1][1]) * renderer.render_res[1], marker='x', color='white')
 
                 #
                 print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
