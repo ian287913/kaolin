@@ -248,8 +248,6 @@ class FishFinMesh:
     
     def get_projected_start_and_end_positions(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, renderer:ian_renderer.Renderer, metadata:dict):
         start_xyz, end_xyz = self.get_start_and_end_positions(body_mesh)
-        print(f'start_xyz = {start_xyz}')
-        print(f'end_xyz = {end_xyz}')
         projected_root_xys = renderer.project_vertices_with_camera_params(
             elev = metadata['cam_elev'], 
             azim = metadata['cam_azim'], 
@@ -260,8 +258,6 @@ class FishFinMesh:
         ).squeeze(0)
         projected_start_xy = ((projected_root_xys[0] + 1.)/2.)
         projected_end_xy = ((projected_root_xys[1] + 1.)/2.)
-        print(f'projected_start_xy = {projected_start_xy}')
-        print(f'projected_end_xy = {projected_end_xy}')
 
         return (projected_start_xy, projected_end_xy)
 

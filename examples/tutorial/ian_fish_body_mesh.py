@@ -147,6 +147,17 @@ class FishBodyMesh:
         self.optimizer_parameters['scheduler_step_size'] = self.scheduler_step_size
         self.optimizer_parameters['scheduler_gamma'] = self.scheduler_gamma
 
+    def set_root_lr(self, lr):
+        for g in self.origin_pos_optim.param_groups:
+            g['lr'] = lr
+        for g in self.length_xyz_optim.param_groups:
+            g['lr'] = lr
+    def set_y_lr(self, lr):
+        self.top_spline_optimizer.set_y_lr(lr)
+        self.bottom_spline_optimizer.set_y_lr(lr)
+    def set_t_lr(self, lr):
+        self.top_spline_optimizer.set_t_lr(lr)
+        self.bottom_spline_optimizer.set_t_lr(lr)
 
     def zero_grad(self):
         self.top_spline_optimizer.zero_grad()

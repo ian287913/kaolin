@@ -31,17 +31,17 @@ def train_mesh():
     alpha_weight = 200
     root_pos_weight = 100
     ###alpha_weight = 4.87 # for IOU
-    negative_ys_weight = 1 # this will cause explosion!
+    negative_ys_weight = 0.5 # this will cause explosion!
     y_lr = 5e-2
     t_lr = 5e-2
-    scheduler_step_size = 20
+    scheduler_step_size = 10
     scheduler_gamma = 0.99
-    origin_pos_lr = 5e-2
-    length_xyz_lr = 5e-2
+    origin_pos_lr = 5e-4
+    length_xyz_lr = 5e-4
     render_res = 512
     texture_res = 512
     ##sigmainv = 14000 # 3000~30000, for soft mask, higher sharper
-    sigmainv = 25000 # 3000~30000, for soft mask, higher sharper
+    sigmainv = 17000 # 3000~30000, for soft mask, higher sharper
 
     spline_start_train_epoch = 0
 
@@ -50,7 +50,7 @@ def train_mesh():
     fin_dir_lr = 5e-2
     fin_uv_lr = 5e-3
     # fin_dir_lr = 5e-2
-    fin_start_train_epoch = 10000
+    fin_start_train_epoch = 0
     fin_uv_bound_weight = 100
 
     # parameters
@@ -108,10 +108,15 @@ def train_mesh():
     hyperparameter['fin_uv_bound_weight'] = fin_uv_bound_weight
 
     # lr control
-    hyperparameter['fin_lr_epoch_list'] =   [0,     150,    300,    40000]
-    hyperparameter['fin_spline_lr_list'] =  [0,     5e-2,   3e-2,   5e-3]
-    hyperparameter['fin_uv_lr_list'] =      [5e-3,  5e-5,   5e-3,   5e-4]
-    hyperparameter['fin_dir_lr_list'] =     [5e-2,  5e-3,   0,      0]
+    hyperparameter['body_lr_epoch_list'] =   [0,    100,    200,    300,    400]
+    hyperparameter['body_spline_lr_list'] =  [0,    0,      2e-2,   5e-3,   5e-4]
+    hyperparameter['body_root_lr_list'] =    [5e-2, 5e-3,   5e-4,   5e-5,   5e-5]
+
+    hyperparameter['fin_lr_epoch_list'] =   [0,     50,     200,    300,    400]
+    hyperparameter['fin_t_lr_list'] =       [0,     0,      5e-3,   3e-3,   3e-3]
+    hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
+    hyperparameter['fin_uv_lr_list'] =      [5e-2,  5e-3,   5e-4,   5e-5,   0]
+    hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   5e-2,   4e-3,   4e-3]
     
     data['hyperparameter'] = hyperparameter
 
@@ -184,7 +189,7 @@ def train_mesh():
         start_uv=[0.5, 0.3], end_uv=[0.5, 0.5])
     
     ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
-    fin_list = []
+    fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
     data['hyperparameter']['fin_list'] = fin_list
 
     # # load saved fins
@@ -198,18 +203,30 @@ def train_mesh():
     loss_history = []
     for epoch in range(hyperparameter['num_epoch']):
         # try to expand fin dir
-        if (epoch == 300 or epoch == 400000):
+        if (epoch == 300 or epoch == 350):
             for fin_name in data['hyperparameter']['fin_list']:
                 fin:ian_fish_fin_mesh.FishFinMesh = fish_fin_meshes[fin_name]
-                fin.reset_dir(fin.start_dir + 0.3, fin.end_dir - 0.3)
+                fin.reset_dir(fin.start_dir + 0.1, fin.end_dir - 0.1)
         
 
         # print result
         if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
-            visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch)
+            visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch, True)
 
         # train body
         if (epoch < fin_start_train_epoch):
+            # override lr
+            spline_lr = 0
+            root_lr = 0
+            for idx, lr_epoch in enumerate(data['hyperparameter']['body_lr_epoch_list']):
+                if (epoch >= lr_epoch):
+                    spline_lr = data['hyperparameter']['body_spline_lr_list'][idx]
+                    root_lr = data['hyperparameter']['body_root_lr_list'][idx]
+            fish_body_mesh.set_t_lr(spline_lr)
+            fish_body_mesh.set_y_lr(spline_lr)
+            fish_body_mesh.set_root_lr(root_lr)
+
+            # reset mesh
             fish_body_mesh.zero_grad()
             fish_body_mesh.update_mesh(lod_x, lod_y)
 
@@ -245,10 +262,10 @@ def train_mesh():
             bottom_spline_negative_ys_loss = fish_body_mesh.bottom_spline_optimizer.calculate_negative_ys_loss(lod_x)
             negative_ys_loss = top_spline_negative_ys_loss + bottom_spline_negative_ys_loss
 
-            loss = (image_loss * image_weight + 
-                    alpha_loss * alpha_weight + 
-                    negative_ys_loss * negative_ys_weight +
-                    root_pos_loss * root_pos_weight)
+            loss = (image_loss * data['hyperparameter']['image_weight'] + 
+                    alpha_loss * data['hyperparameter']['alpha_weight'] + 
+                    negative_ys_loss * data['hyperparameter']['negative_ys_weight'] +
+                    root_pos_loss * data['hyperparameter']['root_pos_weight'])
 
 
             # # dump graph
@@ -311,17 +328,20 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     root_pos_weight = data['hyperparameter']['root_pos_weight']
 
     # set lr according to epoch
+    t_lr = 0
+    y_lr = 0
     spline_lr = 0
     uv_lr = 0
     dir_lr = 0
     for idx, lr_epoch in enumerate(data['hyperparameter']['fin_lr_epoch_list']):
         if (epoch >= lr_epoch):
-            spline_lr = data['hyperparameter']['fin_spline_lr_list'][idx]
+            t_lr = data['hyperparameter']['fin_t_lr_list'][idx]
+            y_lr = data['hyperparameter']['fin_y_lr_list'][idx]
             uv_lr = data['hyperparameter']['fin_uv_lr_list'][idx]
             dir_lr = data['hyperparameter']['fin_dir_lr_list'][idx]
 
-    fish_fin_mesh.set_t_lr(spline_lr)
-    fish_fin_mesh.set_y_lr(spline_lr)
+    fish_fin_mesh.set_t_lr(t_lr)
+    fish_fin_mesh.set_y_lr(y_lr)
     fish_fin_mesh.set_uv_lr(uv_lr)
     fish_fin_mesh.set_dir_lr(dir_lr)
 
@@ -406,8 +426,6 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
 
         # calculate projected root position
         projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
-        print(f'projected_start_xy = {projected_start_xy}')
-        print(f'projected_end_xy = {projected_end_xy}')
         pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='4', color='royalblue')
         pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='3', color='royalblue')
 
@@ -445,10 +463,10 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                 pylab.plot(gt_fin_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[1][1]) * renderer.render_res[1], marker='x', color='white')
 
                 #
-                print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
-                print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
-                print(f"fish_fin_mesh.start_dir = {fish_fin_mesh.start_dir}")
-                print(f"fish_fin_mesh.end_dir = {fish_fin_mesh.end_dir}")
+                # print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
+                # print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
+                # print(f"fish_fin_mesh.start_dir = {fish_fin_mesh.start_dir}")
+                # print(f"fish_fin_mesh.end_dir = {fish_fin_mesh.end_dir}")
 
 
             else:
@@ -457,9 +475,13 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
     image_name = str(epoch)
 
     # gt
+    gt_body_draw_color = (0.2, 0.3, 0)
     gt_fin_draw_color = (0.5, 0.5, 0.5)
     if (add_gt):
         image_name += "_with_gt"
+        # body
+        rendered_image += data['body_mask'].cuda() * torch.tensor(gt_body_draw_color, dtype=torch.float, device='cuda', requires_grad=False)
+        # fins
         for fin_name in data['hyperparameter']['fin_list']:
             if (fin_name in fish_fin_meshes):
                 gt_fin_mask = data[fin_name + '_mask'].cuda()
@@ -471,7 +493,7 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
     pylab.title(f'epoch: {image_name}')
 
     # save or show image
-    save_image = False
+    save_image = True
     if (save_image):
         fig_path = f"{data['output_path']}{image_name}.png"
         pylab.savefig(fig_path)
