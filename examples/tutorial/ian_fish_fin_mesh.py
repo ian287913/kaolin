@@ -239,12 +239,31 @@ class FishFinMesh:
         self.start_dir_scheduler.step()
         self.end_dir_scheduler.step()
 
-    def get_start_and_end_position(self, body_mesh: ian_fish_body_mesh.FishBodyMesh):
+    def get_start_and_end_positions(self, body_mesh: ian_fish_body_mesh.FishBodyMesh):
         clamped_start_uv = torch.clamp(self.start_uv, 0, 1)
         clamped_end_uv = torch.clamp(self.end_uv, 0, 1)
         start_xyz = body_mesh.get_position_by_uv(clamped_start_uv)
         end_xyz = body_mesh.get_position_by_uv(clamped_end_uv)
         return (start_xyz, end_xyz)
+    
+    def get_projected_start_and_end_positions(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, renderer:ian_renderer.Renderer, metadata:dict):
+        start_xyz, end_xyz = self.get_start_and_end_positions(body_mesh)
+        print(f'start_xyz = {start_xyz}')
+        print(f'end_xyz = {end_xyz}')
+        projected_root_xys = renderer.project_vertices_with_camera_params(
+            elev = metadata['cam_elev'], 
+            azim = metadata['cam_azim'], 
+            r = metadata['cam_radius'], 
+            look_at_height = metadata['cam_look_at_height'], 
+            fovyangle = metadata['cam_fovyangle'],
+            vertices = torch.stack((start_xyz, end_xyz), dim=0),
+        ).squeeze(0)
+        projected_start_xy = ((projected_root_xys[0] + 1.)/2.)
+        projected_end_xy = ((projected_root_xys[1] + 1.)/2.)
+        print(f'projected_start_xy = {projected_start_xy}')
+        print(f'projected_end_xy = {projected_end_xy}')
+
+        return (projected_start_xy, projected_end_xy)
 
     def update_mesh(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, lod_x, lod_y):
         clamped_start_uv = torch.clamp(self.start_uv, 0, 1)

@@ -401,17 +401,18 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
         projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
         print(f'projected_start_xy = {projected_start_xy}')
         print(f'projected_end_xy = {projected_end_xy}')
-        pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], projected_start_xy[1].cpu() * renderer.render_res[1], marker='4', color='royalblue')
-        pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], projected_end_xy[1].cpu() * renderer.render_res[1], marker='3', color='royalblue')
+        pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='4', color='royalblue')
+        pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='3', color='royalblue')
 
         gt_body_mask_root_xys = data['root_segmentation']['body_mask']
-        pylab.plot(gt_body_mask_root_xys[0][0] * renderer.render_res[0], gt_body_mask_root_xys[0][1] * renderer.render_res[1], marker='4', color='white')
-        pylab.plot(gt_body_mask_root_xys[1][0] * renderer.render_res[0], gt_body_mask_root_xys[1][1] * renderer.render_res[1], marker='3', color='white')
+        pylab.plot(gt_body_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[0][1]) * renderer.render_res[1], marker='4', color='white')
+        pylab.plot(gt_body_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[1][1]) * renderer.render_res[1], marker='3', color='white')
 
         # fin
         for fin_name in data['hyperparameter']['fin_list']:
             if (fin_name in fish_fin_meshes):
                 fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh = fish_fin_meshes[fin_name]
+                # render mesh
                 fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
                 rendered_fin_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
                     elev = data['metadata']['cam_elev'], 
@@ -427,6 +428,12 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                 if (fin_name == 'pelvic_fin'):
                     draw_color = (0, 1, 0)
                 rendered_image += rendered_fin_image * torch.tensor(draw_color, dtype=torch.float, device='cuda', requires_grad=False)
+
+                # calculate root xys
+                projected_start_xy, projected_end_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
+                pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='*', color='salmon')
+                pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='x', color='salmon')
+
 
                 #
                 print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
