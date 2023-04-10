@@ -31,7 +31,7 @@ def train_mesh():
     alpha_weight = 200
     root_pos_weight = 100
     ###alpha_weight = 4.87 # for IOU
-    negative_ys_weight = 0.5 # this will cause explosion!
+    negative_ys_weight = 0.9 # this will cause explosion!
     y_lr = 5e-2
     t_lr = 5e-2
     scheduler_step_size = 10
@@ -63,7 +63,7 @@ def train_mesh():
     visualize_epoch_interval = 10
 
     key_size = 20
-    lod_x = 60
+    lod_x = 40
     lod_y = 10
 
     # texture map
@@ -115,10 +115,10 @@ def train_mesh():
     hyperparameter['body_spline_lr_list'] =  [0,    0,      2e-2,   5e-3,   5e-4]
     hyperparameter['body_root_lr_list'] =    [5e-2, 5e-3,   5e-4,   5e-5,   5e-5]
 
-    hyperparameter['fin_lr_epoch_list'] =   [0,     150,     300,    400,    500]
-    hyperparameter['fin_t_lr_list'] =       [0,     0,      5e-3,   3e-3,   3e-3]
+    hyperparameter['fin_lr_epoch_list'] =   [0,     150,    300,    400,    500]
+    hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-4,   3e-5,   3e-6]
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
-    hyperparameter['fin_uv_lr_list'] =      [5e-2,  5e-3,   5e-4,   5e-5,   0]
+    hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   3e-4,   0,      0]
     hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   5e-2,   4e-3,   4e-3]
     
     data['hyperparameter'] = hyperparameter
@@ -428,14 +428,14 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
         # set body to blue
         rendered_image = rendered_body_image * torch.tensor((0, 0, 1), dtype=torch.float, device='cuda', requires_grad=False)
 
-        # calculate projected root position
-        projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
-        pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='4', color='royalblue')
-        pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='3', color='royalblue')
-
-        gt_body_mask_root_xys = data['root_segmentation']['body_mask']
-        pylab.plot(gt_body_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[0][1]) * renderer.render_res[1], marker='4', color='white')
-        pylab.plot(gt_body_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[1][1]) * renderer.render_res[1], marker='3', color='white')
+        # projected root position
+        if (add_gt):
+            projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
+            pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='4', color='royalblue')
+            pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='3', color='royalblue')
+            gt_body_mask_root_xys = data['root_segmentation']['body_mask']
+            pylab.plot(gt_body_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[0][1]) * renderer.render_res[1], marker='4', color='white')
+            pylab.plot(gt_body_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[1][1]) * renderer.render_res[1], marker='3', color='white')
 
         # fin
         for fin_name in data['hyperparameter']['fin_list']:
@@ -458,20 +458,19 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                     draw_color = (0, 1, 0)
                 rendered_image += rendered_fin_image * torch.tensor(draw_color, dtype=torch.float, device='cuda', requires_grad=False)
 
-                # calculate root xys
-                projected_start_xy, projected_end_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
-                pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='*', color='salmon')
-                pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='x', color='salmon')
-                gt_fin_mask_root_xys = data['root_segmentation'][f'{fin_name}_mask']
-                pylab.plot(gt_fin_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[0][1]) * renderer.render_res[1], marker='*', color='white')
-                pylab.plot(gt_fin_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[1][1]) * renderer.render_res[1], marker='x', color='white')
+                # projected root position
+                if (add_gt):
+                    projected_start_xy, projected_end_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
+                    pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='*', color='salmon')
+                    pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='x', color='salmon')
+                    gt_fin_mask_root_xys = data['root_segmentation'][f'{fin_name}_mask']
+                    pylab.plot(gt_fin_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[0][1]) * renderer.render_res[1], marker='*', color='white')
+                    pylab.plot(gt_fin_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[1][1]) * renderer.render_res[1], marker='x', color='white')
 
-                #
                 # print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
                 # print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
                 # print(f"fish_fin_mesh.start_dir = {fish_fin_mesh.start_dir}")
                 # print(f"fish_fin_mesh.end_dir = {fish_fin_mesh.end_dir}")
-
 
             else:
                 print(f'failed to render fin: {fin_name}. the name does not found in the fish_fin_meshes.')
