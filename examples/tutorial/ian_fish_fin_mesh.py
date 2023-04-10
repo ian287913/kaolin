@@ -256,8 +256,10 @@ class FishFinMesh:
             fovyangle = metadata['cam_fovyangle'],
             vertices = torch.stack((start_xyz, end_xyz), dim=0),
         ).squeeze(0)
-        projected_start_xy = ((projected_root_xys[0] + 1.)/2.)
-        projected_end_xy = ((projected_root_xys[1] + 1.)/2.)
+        tensor_one = torch.tensor(1, dtype=torch.float, device='cuda', requires_grad=False)
+        tensor_two = torch.tensor(2, dtype=torch.float, device='cuda', requires_grad=False)
+        projected_start_xy = ((projected_root_xys[0] + tensor_one)/tensor_two)
+        projected_end_xy = ((projected_root_xys[1] + tensor_one)/tensor_two)
 
         return (projected_start_xy, projected_end_xy)
 

@@ -51,6 +51,7 @@ def train_mesh():
     fin_uv_lr = 5e-3
     # fin_dir_lr = 5e-2
     fin_start_train_epoch = 0
+    mask_loss_enable_epoch = 150
     fin_uv_bound_weight = 100
 
     # parameters
@@ -86,6 +87,8 @@ def train_mesh():
     # set hyperparameters to data
     hyperparameter = {}
     hyperparameter['num_epoch'] = 500
+    hyperparameter['fin_start_train_epoch'] = fin_start_train_epoch
+    hyperparameter['mask_loss_enable_epoch'] = mask_loss_enable_epoch
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
     hyperparameter['lod_y'] = lod_y
@@ -112,7 +115,7 @@ def train_mesh():
     hyperparameter['body_spline_lr_list'] =  [0,    0,      2e-2,   5e-3,   5e-4]
     hyperparameter['body_root_lr_list'] =    [5e-2, 5e-3,   5e-4,   5e-5,   5e-5]
 
-    hyperparameter['fin_lr_epoch_list'] =   [0,     50,     200,    300,    400]
+    hyperparameter['fin_lr_epoch_list'] =   [0,     150,     300,    400,    500]
     hyperparameter['fin_t_lr_list'] =       [0,     0,      5e-3,   3e-3,   3e-3]
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
     hyperparameter['fin_uv_lr_list'] =      [5e-2,  5e-3,   5e-4,   5e-5,   0]
@@ -149,7 +152,8 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0, 1], end_uv=[1, 1])
+        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
+        #start_uv=[0, 1], end_uv=[1, 1])
     fish_fin_meshes['caudal_fin'] = ian_fish_fin_mesh.FishFinMesh(
         key_size, 
         y_lr=y_lr, 
@@ -158,7 +162,8 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0, 0], end_uv=[0, 1])
+        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
+        #start_uv=[0, 0], end_uv=[0, 1])
     fish_fin_meshes['anal_fin'] = ian_fish_fin_mesh.FishFinMesh(
         key_size, 
         y_lr=y_lr, 
@@ -167,8 +172,8 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0.3, 0], end_uv=[0.05, 0],
-        init_height=0.2)
+        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
+        #start_uv=[0.3, 0], end_uv=[0.05, 0])
     fish_fin_meshes['pelvic_fin'] = ian_fish_fin_mesh.FishFinMesh(
         key_size, 
         y_lr=y_lr, 
@@ -177,7 +182,8 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0.6, 0.1], end_uv=[0.4, 0.1])
+        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
+        #start_uv=[0.6, 0.1], end_uv=[0.4, 0.1])
     fish_fin_meshes['pectoral_fin'] = ian_fish_fin_mesh.FishFinMesh(
         key_size, 
         y_lr=y_lr, 
@@ -186,7 +192,8 @@ def train_mesh():
         scheduler_gamma=scheduler_gamma,
         uv_lr=fin_uv_lr,
         dir_lr=fin_dir_lr,
-        start_uv=[0.5, 0.3], end_uv=[0.5, 0.5])
+        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
+        #start_uv=[0.5, 0.3], end_uv=[0.5, 0.5])
     
     ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
     fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
@@ -247,15 +254,12 @@ def train_mesh():
             gt_start_root_xy = torch.tensor(gt_body_mask_root_xys[0], dtype=torch.float, device='cuda', requires_grad=False)
             gt_end_root_xy = torch.tensor(gt_body_mask_root_xys[1], dtype=torch.float, device='cuda', requires_grad=False)
             ### root pos loss ###
-            root_pos_loss = 0
-            root_pos_loss += torch.linalg.norm((projected_start_root_xy - gt_start_root_xy), ord=1)
-            root_pos_loss += torch.linalg.norm((projected_end_root_xy - gt_end_root_xy), ord=1)
+            root_pos_loss = torch.abs(projected_start_root_xy - gt_start_root_xy).mean() + torch.abs(projected_end_root_xy - gt_end_root_xy).mean()
 
             ### Compute Losses ###
             image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
 
             alpha_loss = torch.mean(torch.abs(soft_mask - data['body_mask'][:,:,0].cuda()))
-
 
 
             top_spline_negative_ys_loss = fish_body_mesh.top_spline_optimizer.calculate_negative_ys_loss(lod_x)
@@ -267,22 +271,23 @@ def train_mesh():
                     negative_ys_loss * data['hyperparameter']['negative_ys_weight'] +
                     root_pos_loss * data['hyperparameter']['root_pos_weight'])
 
-
+            
             # # dump graph
             # if (epoch % visualize_epoch_interval == 0):
             #     from torchviz import make_dot, make_dot_from_trace
-            #     g = make_dot(loss, dict(
-            #         length_xyz = curve_mesh_optimizer.length_xyz, 
-            #         origin_pos = curve_mesh_optimizer.origin_pos, 
-            #         key_ys = curve_mesh_optimizer.spline_optimizer.key_ys, 
-            #         key_ts = curve_mesh_optimizer.spline_optimizer.key_ts, 
-            #         vertices = curve_mesh_optimizer.body_mesh.vertices, 
-            #         texture_map = curve_mesh_optimizer.body_mesh.texture_map, 
-            #         output = loss))
+            #     g = make_dot(root_pos_loss, dict(
+            #         origin_xy = fish_body_mesh.origin_xy, 
+            #         length_x = fish_body_mesh.length_x, 
+            #         length_y = fish_body_mesh.length_y, 
+            #         key_ys = fish_body_mesh.top_spline_optimizer.key_ys, 
+            #         key_ts = fish_body_mesh.top_spline_optimizer.key_ts, 
+            #         vertices = fish_body_mesh.vertices, 
+            #         root_pos_loss = root_pos_loss))
             #     g.view()
 
             ### Update the parameters ###
             loss.backward()
+
 
             train_spline = True if epoch >= spline_start_train_epoch else False
             fish_body_mesh.step(train_spline)
@@ -320,6 +325,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
                    renderer, texture_map,
                    data, gt_fin_mask, gt_fin_mask_root_xys, 
                    epoch):
+    
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
     alpha_weight = data['hyperparameter']['alpha_weight']
@@ -330,7 +336,6 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     # set lr according to epoch
     t_lr = 0
     y_lr = 0
-    spline_lr = 0
     uv_lr = 0
     dir_lr = 0
     for idx, lr_epoch in enumerate(data['hyperparameter']['fin_lr_epoch_list']):
@@ -345,6 +350,9 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     fish_fin_mesh.set_uv_lr(uv_lr)
     fish_fin_mesh.set_dir_lr(dir_lr)
 
+    # disable mask weight according to the epoch
+    if (epoch < data['hyperparameter']['mask_loss_enable_epoch']):
+        alpha_weight = 0
 
     fish_fin_mesh.zero_grad()
     fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
@@ -361,18 +369,14 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     
     # get the projected root positions
     projected_start_root_xy, projected_end_root_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
-    gt_start_root_xy = torch.tensor(gt_fin_mask_root_xys[0], dtype=torch.float, device='cuda', requires_grad=False)
-    gt_end_root_xy = torch.tensor(gt_fin_mask_root_xys[1], dtype=torch.float, device='cuda', requires_grad=False)
+    gt_start_root_xy = torch.tensor(gt_fin_mask_root_xys[0], dtype=torch.float, device='cuda', requires_grad=True)
+    gt_end_root_xy = torch.tensor(gt_fin_mask_root_xys[1], dtype=torch.float, device='cuda', requires_grad=True)
     ### root pos loss ###
-    root_pos_loss = 0
-    root_pos_loss += torch.linalg.norm((projected_start_root_xy - gt_start_root_xy), ord=1)
-    root_pos_loss += torch.linalg.norm((projected_end_root_xy - gt_end_root_xy), ord=1)
+    root_pos_loss = torch.abs(projected_start_root_xy - gt_start_root_xy).mean() + torch.abs(projected_end_root_xy - gt_end_root_xy).mean()
 
     ### Compute Losses ###
     alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
     ##alpha_loss = kal.metrics.render.mask_iou(soft_mask, gt_fin_mask[:,:,0].cuda().unsqueeze(0))
-    
-    # TODO: root xy loss
 
     sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
     negative_ys_loss = sil_spline_negative_ys_loss
@@ -380,7 +384,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
 
     loss = (alpha_loss * alpha_weight + 
             negative_ys_loss * negative_ys_weight + 
-            fin_uv_bound_loss * fin_uv_bound_weight+
+            fin_uv_bound_loss * fin_uv_bound_weight +
             root_pos_loss * root_pos_weight)
 
     ### Update the parameters ###
