@@ -370,6 +370,10 @@ class FishFinMesh:
 
     def import_from_json(self, path, fin_name):
         json_path = os.path.join(path,f'{fin_name}.json')
+        if (not os.path.exists(json_path)):
+            print(f'file path: {json_path} does not exist!')
+            return
+
         obj_text = codecs.open(json_path, 'r', encoding='utf-8').read()
         json_dict = json.loads(obj_text) #This reads json to list
 

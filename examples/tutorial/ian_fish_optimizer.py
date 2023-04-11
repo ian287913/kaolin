@@ -23,7 +23,30 @@ import ian_fish_fin_mesh
 import ian_fish_body_mesh
 
 
+def prepare_body_mesh(hyperparameter:dict, load_path = None):
+    fish_body_mesh = ian_fish_body_mesh.FishBodyMesh(
+        key_size=               hyperparameter['key_size'], 
+        y_lr=                   hyperparameter['y_lr'], 
+        t_lr=                   hyperparameter['t_lr'], 
+        scheduler_step_size=    hyperparameter['scheduler_step_size'], 
+        scheduler_gamma=        hyperparameter['scheduler_gamma'],
+        origin_pos_lr=          hyperparameter['origin_pos_lr'],
+        length_xyz_lr=          hyperparameter['length_xyz_lr'])
+    if (load_path is not None):
+        fish_body_mesh.import_from_json(load_path)
+    return fish_body_mesh
 
+def prepare_fin_meshse(hyperparameter:dict, load_path = None):
+    fish_body_mesh = ian_fish_body_mesh.FishBodyMesh(
+        key_size=               hyperparameter['key_size'], 
+        y_lr=                   hyperparameter['y_lr'], 
+        t_lr=                   hyperparameter['t_lr'], 
+        scheduler_step_size=    hyperparameter['scheduler_step_size'], 
+        scheduler_gamma=        hyperparameter['scheduler_gamma'],
+        origin_pos_lr=          hyperparameter['origin_pos_lr'],
+        length_xyz_lr=          hyperparameter['length_xyz_lr'])
+    if (load_path is not None):
+        fish_body_mesh.import_from_json(load_path)
 
 def train_mesh():
     # Hyperparameters
@@ -42,8 +65,6 @@ def train_mesh():
     texture_res = 512
     ##sigmainv = 14000 # 3000~30000, for soft mask, higher sharper
     sigmainv = 17000 # 3000~30000, for soft mask, higher sharper
-
-    spline_start_train_epoch = 0
 
     # fin
     # fin_uv_lr = 0
@@ -105,13 +126,15 @@ def train_mesh():
     hyperparameter['t_lr'] = t_lr
     hyperparameter['origin_pos_lr'] = origin_pos_lr
     hyperparameter['length_xyz_lr'] = length_xyz_lr
+    hyperparameter['scheduler_step_size'] = scheduler_step_size
+    hyperparameter['scheduler_gamma'] = scheduler_gamma
 
     hyperparameter['fin_dir_lr'] = fin_dir_lr
     hyperparameter['fin_uv_lr'] = fin_uv_lr
     hyperparameter['fin_uv_bound_weight'] = fin_uv_bound_weight
 
     # lr control
-    hyperparameter['body_lr_epoch_list'] =   [0,    100,    200,    300,    400]
+    hyperparameter['body_lr_epoch_list'] =   [0,    100,    150,    300,    400]
     hyperparameter['body_spline_lr_list'] =  [0,    0,      2e-2,   5e-3,   5e-4]
     hyperparameter['body_root_lr_list'] =    [5e-2, 5e-3,   5e-4,   5e-5,   5e-5]
 
@@ -122,7 +145,6 @@ def train_mesh():
     hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   5e-2,   4e-3,   4e-3]
     
     data['hyperparameter'] = hyperparameter
-
     data['rendered_path'] = rendered_path_single
     data['output_path'] = output_path
 
@@ -130,78 +152,32 @@ def train_mesh():
 
     # init optimizer
     # body mesh
-    fish_body_mesh = ian_fish_body_mesh.FishBodyMesh(
-        key_size, 
-        y_lr=y_lr, 
-        t_lr=t_lr, 
-        scheduler_step_size=scheduler_step_size, 
-        scheduler_gamma=scheduler_gamma,
-        origin_pos_lr=origin_pos_lr,
-        length_xyz_lr=length_xyz_lr)
-    
-    # load body mesh
-    import_fish_body_json(rendered_path_single, fish_body_mesh)
+    fish_body_mesh = prepare_body_mesh(hyperparameter, None)
+    ##fish_body_mesh = prepare_body_mesh(hyperparameter, rendered_path_single)
     
     # fin mesh
     fish_fin_meshes = {}
-    fish_fin_meshes['dorsal_fin'] = ian_fish_fin_mesh.FishFinMesh(
-        key_size, 
-        y_lr=y_lr, 
-        t_lr=t_lr, 
-        scheduler_step_size=scheduler_step_size, 
-        scheduler_gamma=scheduler_gamma,
-        uv_lr=fin_uv_lr,
-        dir_lr=fin_dir_lr,
-        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
-        #start_uv=[0, 1], end_uv=[1, 1])
-    fish_fin_meshes['caudal_fin'] = ian_fish_fin_mesh.FishFinMesh(
-        key_size, 
-        y_lr=y_lr, 
-        t_lr=t_lr, 
-        scheduler_step_size=scheduler_step_size, 
-        scheduler_gamma=scheduler_gamma,
-        uv_lr=fin_uv_lr,
-        dir_lr=fin_dir_lr,
-        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
-        #start_uv=[0, 0], end_uv=[0, 1])
-    fish_fin_meshes['anal_fin'] = ian_fish_fin_mesh.FishFinMesh(
-        key_size, 
-        y_lr=y_lr, 
-        t_lr=t_lr, 
-        scheduler_step_size=scheduler_step_size, 
-        scheduler_gamma=scheduler_gamma,
-        uv_lr=fin_uv_lr,
-        dir_lr=fin_dir_lr,
-        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
-        #start_uv=[0.3, 0], end_uv=[0.05, 0])
-    fish_fin_meshes['pelvic_fin'] = ian_fish_fin_mesh.FishFinMesh(
-        key_size, 
-        y_lr=y_lr, 
-        t_lr=t_lr, 
-        scheduler_step_size=scheduler_step_size, 
-        scheduler_gamma=scheduler_gamma,
-        uv_lr=fin_uv_lr,
-        dir_lr=fin_dir_lr,
-        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
-        #start_uv=[0.6, 0.1], end_uv=[0.4, 0.1])
-    fish_fin_meshes['pectoral_fin'] = ian_fish_fin_mesh.FishFinMesh(
-        key_size, 
-        y_lr=y_lr, 
-        t_lr=t_lr, 
-        scheduler_step_size=scheduler_step_size, 
-        scheduler_gamma=scheduler_gamma,
-        uv_lr=fin_uv_lr,
-        dir_lr=fin_dir_lr,
-        start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
-        #start_uv=[0.5, 0.3], end_uv=[0.5, 0.5])
-    
     ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
     fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
     data['hyperparameter']['fin_list'] = fin_list
 
     # # load saved fins
-    # for fin_name in data['hyperparameter']['fin_list']:
-    #     import_fish_fin_json(rendered_path_single, fish_fin_meshes[fin_name], fin_name)
+    load_fins_from_json = True
+    for fin_name in data['hyperparameter']['fin_list']:
+        # instantiate a fin
+        fish_fin_mesh = ian_fish_fin_mesh.FishFinMesh(
+            key_size, 
+            y_lr=y_lr, 
+            t_lr=t_lr, 
+            scheduler_step_size=scheduler_step_size, 
+            scheduler_gamma=scheduler_gamma,
+            uv_lr=fin_uv_lr,
+            dir_lr=fin_dir_lr,
+            start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
+        # try to load from json
+        if (load_fins_from_json):
+            fish_fin_mesh.import_from_json(rendered_path_single, fin_name)
+        fish_fin_meshes[fin_name] = fish_fin_mesh
 
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
@@ -215,82 +191,13 @@ def train_mesh():
                 fin:ian_fish_fin_mesh.FishFinMesh = fish_fin_meshes[fin_name]
                 fin.reset_dir(fin.start_dir + 0.1, fin.end_dir - 0.1)
         
-
         # print result
         if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
             visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch, True)
 
         # train body
         if (epoch < fin_start_train_epoch):
-            # override lr
-            spline_lr = 0
-            root_lr = 0
-            for idx, lr_epoch in enumerate(data['hyperparameter']['body_lr_epoch_list']):
-                if (epoch >= lr_epoch):
-                    spline_lr = data['hyperparameter']['body_spline_lr_list'][idx]
-                    root_lr = data['hyperparameter']['body_root_lr_list'][idx]
-            fish_body_mesh.set_t_lr(spline_lr)
-            fish_body_mesh.set_y_lr(spline_lr)
-            fish_body_mesh.set_root_lr(root_lr)
-
-            # reset mesh
-            fish_body_mesh.zero_grad()
-            fish_body_mesh.update_mesh(lod_x, lod_y)
-
-            # render mesh
-            rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
-                elev = data['metadata']['cam_elev'], 
-                azim = data['metadata']['cam_azim'], 
-                r = data['metadata']['cam_radius'], 
-                look_at_height = data['metadata']['cam_look_at_height'], 
-                fovyangle = data['metadata']['cam_fovyangle'],
-                mesh = fish_body_mesh,
-                sigmainv = data['metadata']['sigmainv'],
-                texture_map=texture_map)
-            
-            # calculate projected root position
-            projected_start_root_xy, projected_end_root_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
-            gt_body_mask_root_xys = data['root_segmentation']['body_mask']
-            gt_start_root_xy = torch.tensor(gt_body_mask_root_xys[0], dtype=torch.float, device='cuda', requires_grad=False)
-            gt_end_root_xy = torch.tensor(gt_body_mask_root_xys[1], dtype=torch.float, device='cuda', requires_grad=False)
-            ### root pos loss ###
-            root_pos_loss = torch.abs(projected_start_root_xy - gt_start_root_xy).mean() + torch.abs(projected_end_root_xy - gt_end_root_xy).mean()
-
-            ### Compute Losses ###
-            image_loss = torch.mean(torch.abs(rendered_image - gt_rgb))
-
-            alpha_loss = torch.mean(torch.abs(soft_mask - data['body_mask'][:,:,0].cuda()))
-
-
-            top_spline_negative_ys_loss = fish_body_mesh.top_spline_optimizer.calculate_negative_ys_loss(lod_x)
-            bottom_spline_negative_ys_loss = fish_body_mesh.bottom_spline_optimizer.calculate_negative_ys_loss(lod_x)
-            negative_ys_loss = top_spline_negative_ys_loss + bottom_spline_negative_ys_loss
-
-            loss = (image_loss * data['hyperparameter']['image_weight'] + 
-                    alpha_loss * data['hyperparameter']['alpha_weight'] + 
-                    negative_ys_loss * data['hyperparameter']['negative_ys_weight'] +
-                    root_pos_loss * data['hyperparameter']['root_pos_weight'])
-
-            
-            # # dump graph
-            # if (epoch % visualize_epoch_interval == 0):
-            #     from torchviz import make_dot, make_dot_from_trace
-            #     g = make_dot(root_pos_loss, dict(
-            #         origin_xy = fish_body_mesh.origin_xy, 
-            #         length_x = fish_body_mesh.length_x, 
-            #         length_y = fish_body_mesh.length_y, 
-            #         key_ys = fish_body_mesh.top_spline_optimizer.key_ys, 
-            #         key_ts = fish_body_mesh.top_spline_optimizer.key_ts, 
-            #         vertices = fish_body_mesh.vertices, 
-            #         root_pos_loss = root_pos_loss))
-            #     g.view()
-
-            ### Update the parameters ###
-            loss.backward()
-
-
-            train_spline = True if epoch >= spline_start_train_epoch else False
-            fish_body_mesh.step(train_spline)
+            loss = train_body_mesh(fish_body_mesh, renderer, texture_map, data, epoch)
         # train fins
         else:
             loss = 0
@@ -320,6 +227,92 @@ def train_mesh():
     export_loss_history(data['output_path'], loss_history)
 
 
+def train_body_mesh(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
+                   renderer:ian_renderer.Renderer, texture_map,
+                   data, 
+                   epoch):
+    
+    lod_x = data['hyperparameter']['lod_x']
+    lod_y = data['hyperparameter']['lod_y']
+
+    image_weight = data['hyperparameter']['image_weight']
+    alpha_weight = data['hyperparameter']['alpha_weight']
+    negative_ys_weight = data['hyperparameter']['negative_ys_weight']
+    root_pos_weight = data['hyperparameter']['root_pos_weight']
+
+    # disable mask weight according to the epoch
+    if (epoch < data['hyperparameter']['mask_loss_enable_epoch']):
+        alpha_weight = 0
+
+    # override lr
+    spline_lr = 0
+    root_lr = 0
+    for idx, lr_epoch in enumerate(data['hyperparameter']['body_lr_epoch_list']):
+        if (epoch >= lr_epoch):
+            spline_lr = data['hyperparameter']['body_spline_lr_list'][idx]
+            root_lr = data['hyperparameter']['body_root_lr_list'][idx]
+    fish_body_mesh.set_t_lr(spline_lr)
+    fish_body_mesh.set_y_lr(spline_lr)
+    fish_body_mesh.set_root_lr(root_lr)
+
+    # reset mesh
+    fish_body_mesh.zero_grad()
+    fish_body_mesh.update_mesh(lod_x, lod_y)
+
+    # render mesh
+    rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
+        elev = data['metadata']['cam_elev'], 
+        azim = data['metadata']['cam_azim'], 
+        r = data['metadata']['cam_radius'], 
+        look_at_height = data['metadata']['cam_look_at_height'], 
+        fovyangle = data['metadata']['cam_fovyangle'],
+        mesh = fish_body_mesh,
+        sigmainv = data['metadata']['sigmainv'],
+        texture_map=texture_map)
+    
+    # calculate projected root position
+    projected_start_root_xy, projected_end_root_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
+    gt_body_mask_root_xys = data['root_segmentation']['body_mask']
+    gt_start_root_xy = torch.tensor(gt_body_mask_root_xys[0], dtype=torch.float, device='cuda', requires_grad=False)
+    gt_end_root_xy = torch.tensor(gt_body_mask_root_xys[1], dtype=torch.float, device='cuda', requires_grad=False)
+    ### root pos loss ###
+    root_pos_loss = torch.abs(projected_start_root_xy - gt_start_root_xy).mean() + torch.abs(projected_end_root_xy - gt_end_root_xy).mean()
+    ### Image Losses ###
+    image_loss = torch.mean(torch.abs(rendered_image - data['rgb'].cuda()))
+    ### Alpha Losses ###
+    alpha_loss = torch.mean(torch.abs(soft_mask - data['body_mask'][:,:,0].cuda()))
+    ### Negative Ys Losses ###
+    top_spline_negative_ys_loss = fish_body_mesh.top_spline_optimizer.calculate_negative_ys_loss(lod_x)
+    bottom_spline_negative_ys_loss = fish_body_mesh.bottom_spline_optimizer.calculate_negative_ys_loss(lod_x)
+    negative_ys_loss = top_spline_negative_ys_loss + bottom_spline_negative_ys_loss
+
+
+    loss = (image_loss * image_weight +
+            alpha_loss * alpha_weight + 
+            negative_ys_loss * negative_ys_weight + 
+            root_pos_loss * root_pos_weight)
+    
+    # # dump graph
+    # if (epoch % visualize_epoch_interval == 0):
+    #     from torchviz import make_dot, make_dot_from_trace
+    #     g = make_dot(root_pos_loss, dict(
+    #         origin_xy = fish_body_mesh.origin_xy, 
+    #         length_x = fish_body_mesh.length_x, 
+    #         length_y = fish_body_mesh.length_y, 
+    #         key_ys = fish_body_mesh.top_spline_optimizer.key_ys, 
+    #         key_ts = fish_body_mesh.top_spline_optimizer.key_ts, 
+    #         vertices = fish_body_mesh.vertices, 
+    #         root_pos_loss = root_pos_loss))
+    #     g.view()
+
+    ### Update the parameters ###
+    loss.backward()
+
+    # step
+    train_spline = True
+    fish_body_mesh.step(train_spline)
+
+    return loss
 
 def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh, 
                    renderer, texture_map,
@@ -374,12 +367,13 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     ### root pos loss ###
     root_pos_loss = torch.abs(projected_start_root_xy - gt_start_root_xy).mean() + torch.abs(projected_end_root_xy - gt_end_root_xy).mean()
 
-    ### Compute Losses ###
+    ### Alpha Losses ###
     alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
     ##alpha_loss = kal.metrics.render.mask_iou(soft_mask, gt_fin_mask[:,:,0].cuda().unsqueeze(0))
-
+    ### Negative Ys Losses ###
     sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
     negative_ys_loss = sil_spline_negative_ys_loss
+    ### Uv Bound Losses ###
     fin_uv_bound_loss = fish_fin_mesh.calculate_uv_bound_loss()
 
     loss = (alpha_loss * alpha_weight + 
@@ -526,8 +520,6 @@ def export_hyperparameter_json(path, hyperparameter):
 
 def import_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
     mesh.import_from_json(path)
-def import_fish_fin_json(path, mesh:ian_fish_fin_mesh.FishFinMesh, fin_name):
-    mesh.import_from_json(path, fin_name)
 
 def export_loss_history(path, loss_history):
     filepath = os.path.join(path,'loss_history.txt')
