@@ -36,17 +36,24 @@ def prepare_body_mesh(hyperparameter:dict, load_path = None):
         fish_body_mesh.import_from_json(load_path)
     return fish_body_mesh
 
-def prepare_fin_meshse(hyperparameter:dict, load_path = None):
-    fish_body_mesh = ian_fish_body_mesh.FishBodyMesh(
-        key_size=               hyperparameter['key_size'], 
-        y_lr=                   hyperparameter['y_lr'], 
-        t_lr=                   hyperparameter['t_lr'], 
-        scheduler_step_size=    hyperparameter['scheduler_step_size'], 
-        scheduler_gamma=        hyperparameter['scheduler_gamma'],
-        origin_pos_lr=          hyperparameter['origin_pos_lr'],
-        length_xyz_lr=          hyperparameter['length_xyz_lr'])
-    if (load_path is not None):
-        fish_body_mesh.import_from_json(load_path)
+def prepare_fin_meshes(hyperparameter:dict, load_path = None):
+    fish_fin_meshes = {}
+    for fin_name in hyperparameter['fin_list']:
+        # instantiate a fin
+        fish_fin_mesh = ian_fish_fin_mesh.FishFinMesh(
+            key_size=               hyperparameter['key_size'], 
+            y_lr=                   hyperparameter['y_lr'], 
+            t_lr=                   hyperparameter['t_lr'], 
+            scheduler_step_size=    hyperparameter['scheduler_step_size'], 
+            scheduler_gamma=        hyperparameter['scheduler_gamma'],
+            uv_lr=                  hyperparameter['fin_uv_lr'],
+            dir_lr=                 hyperparameter['fin_dir_lr'],
+            start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
+        # try to load from json
+        if (load_path is not None):
+            fish_fin_mesh.import_from_json(load_path, fin_name)
+        fish_fin_meshes[fin_name] = fish_fin_mesh
+    return fish_fin_meshes
 
 def train_mesh():
     # Hyperparameters
@@ -63,14 +70,11 @@ def train_mesh():
     length_xyz_lr = 5e-4
     render_res = 512
     texture_res = 512
-    ##sigmainv = 14000 # 3000~30000, for soft mask, higher sharper
     sigmainv = 17000 # 3000~30000, for soft mask, higher sharper
 
     # fin
-    # fin_uv_lr = 0
     fin_dir_lr = 5e-2
     fin_uv_lr = 5e-3
-    # fin_dir_lr = 5e-2
     fin_start_train_epoch = 0
     mask_loss_enable_epoch = 150
     fin_uv_bound_weight = 100
@@ -99,7 +103,6 @@ def train_mesh():
     data = train_data[0]
     data['metadata']['sigmainv'] = sigmainv
     gt_rgb : torch.Tensor = data['rgb'].cuda()
-    gt_alpha : torch.Tensor = data['alpha'].cuda()
 
     # update render_res
     render_res = gt_rgb.shape[0]
@@ -148,40 +151,27 @@ def train_mesh():
     data['rendered_path'] = rendered_path_single
     data['output_path'] = output_path
 
+    # fins that will be instantiated
+    data['hyperparameter']['fin_list'] = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
 
-
-    # init optimizer
-    # body mesh
-    fish_body_mesh = prepare_body_mesh(hyperparameter, None)
-    ##fish_body_mesh = prepare_body_mesh(hyperparameter, rendered_path_single)
+    # init body mesh
+    load_body_mesh_from_json = True
+    if (load_body_mesh_from_json):
+        fish_body_mesh = prepare_body_mesh(hyperparameter, rendered_path_single)
+    else:
+        fish_body_mesh = prepare_body_mesh(hyperparameter, None)
     
-    # fin mesh
-    fish_fin_meshes = {}
-    ##fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
-    fin_list = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
-    data['hyperparameter']['fin_list'] = fin_list
-
-    # # load saved fins
-    load_fins_from_json = True
-    for fin_name in data['hyperparameter']['fin_list']:
-        # instantiate a fin
-        fish_fin_mesh = ian_fish_fin_mesh.FishFinMesh(
-            key_size, 
-            y_lr=y_lr, 
-            t_lr=t_lr, 
-            scheduler_step_size=scheduler_step_size, 
-            scheduler_gamma=scheduler_gamma,
-            uv_lr=fin_uv_lr,
-            dir_lr=fin_dir_lr,
-            start_uv=[0.5, 0.5], end_uv=[0.5, 0.5])
-        # try to load from json
-        if (load_fins_from_json):
-            fish_fin_mesh.import_from_json(rendered_path_single, fin_name)
-        fish_fin_meshes[fin_name] = fish_fin_mesh
+    # init fin mesh
+    load_fin_mesh_from_json = True
+    if (load_fin_mesh_from_json):
+        fish_fin_meshes = prepare_fin_meshes(hyperparameter, rendered_path_single)
+    else:
+        fish_fin_meshes = prepare_fin_meshes(hyperparameter, None)
 
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
     
+
     ##################################### TRAINING #####################################
     loss_history = []
     for epoch in range(hyperparameter['num_epoch']):
