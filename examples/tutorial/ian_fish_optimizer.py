@@ -58,14 +58,14 @@ def prepare_fin_meshes(hyperparameter:dict, load_path = None):
 
 def train_mesh():
     # Hyperparameters
-    image_weight = 0
+    image_weight = 1
     alpha_weight = 200
     root_pos_weight = 100
     ###alpha_weight = 4.87 # for IOU
     negative_ys_weight = 0.9 # this will cause explosion!
     y_lr = 5e-2
     t_lr = 5e-2
-    scheduler_step_size = 10
+    scheduler_step_size = 1000
     scheduler_gamma = 0.99
     origin_pos_lr = 5e-4
     length_xyz_lr = 5e-4
@@ -154,7 +154,8 @@ def train_mesh():
     data['output_path'] = output_path
 
     # fins that will be instantiated
-    data['hyperparameter']['fin_list'] = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
+    ##data['hyperparameter']['fin_list'] = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
+    data['hyperparameter']['fin_list'] = []
 
     # init body mesh
     load_body_mesh_from_json = True
@@ -179,6 +180,7 @@ def train_mesh():
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
     
+    texture_start_train_epoch = 0
 
     ##################################### TRAINING #####################################
     loss_history = []
@@ -191,10 +193,14 @@ def train_mesh():
         
         # print result
         if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
-            visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, True)
+            visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, False, fish_texture)
 
+        
+        # train texture
+        if (epoch >= texture_start_train_epoch):
+            loss = train_texture(fish_body_mesh, renderer, fish_texture, data, epoch)
         # train body
-        if (epoch < fin_start_train_epoch):
+        elif (epoch < fin_start_train_epoch):
             loss = train_body_mesh(fish_body_mesh, renderer, dummy_texture_map, data, epoch)
         # train fins
         else:
@@ -207,7 +213,6 @@ def train_mesh():
                                        renderer, dummy_texture_map, 
                                        data, data[fin_name + '_mask'], data['root_segmentation'][fin_name + '_mask'], 
                                        epoch)
-
         print(f"Epoch {epoch} - loss: {float(loss)}")
         loss_history.append(loss.detach().cpu().numpy().tolist())
 
@@ -225,7 +230,8 @@ def train_mesh():
     export_loss_history(data['output_path'], loss_history)
 
 def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
-                   renderer:ian_renderer.Renderer, texture_map,
+                   renderer:ian_renderer.Renderer,
+                   fish_texture:ian_fish_texture.FishTexture,
                    data, 
                    epoch):
     lod_x = data['hyperparameter']['lod_x']
@@ -251,7 +257,7 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
         fovyangle = data['metadata']['cam_fovyangle'],
         mesh = fish_body_mesh,
         sigmainv = data['metadata']['sigmainv'],
-        texture_map=texture_map)
+        texture_map=fish_texture.texture)
     
     ### Image Losses ###
     image_loss = torch.mean(torch.abs(rendered_image - data['rgb'].cuda()))
@@ -262,7 +268,7 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
     loss.backward()
 
     # step
-    # TODO
+    fish_texture.step()
 
     return loss
 
@@ -316,8 +322,6 @@ def train_body_mesh(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
     gt_end_root_xy = torch.tensor(gt_body_mask_root_xys[1], dtype=torch.float, device='cuda', requires_grad=False)
     ### root pos loss ###
     root_pos_loss = torch.abs(projected_start_root_xy - gt_start_root_xy).mean() + torch.abs(projected_end_root_xy - gt_end_root_xy).mean()
-    ### Image Losses ###
-    image_loss = torch.mean(torch.abs(rendered_image - data['rgb'].cuda()))
     ### Alpha Losses ###
     alpha_loss = torch.mean(torch.abs(soft_mask - data['body_mask'][:,:,0].cuda()))
     ### Negative Ys Losses ###
@@ -326,8 +330,7 @@ def train_body_mesh(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
     negative_ys_loss = top_spline_negative_ys_loss + bottom_spline_negative_ys_loss
 
 
-    loss = (image_loss * image_weight +
-            alpha_loss * alpha_weight + 
+    loss = (alpha_loss * alpha_weight + 
             negative_ys_loss * negative_ys_weight + 
             root_pos_loss * root_pos_weight)
     
@@ -427,7 +430,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
 
     return loss
 
-def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_meshes, renderer:ian_renderer.Renderer, texture_map, data, epoch = 0, add_gt = False):
+def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_meshes, renderer:ian_renderer.Renderer, dummy_texture, data, epoch = 0, add_gt = False, fish_texture:ian_fish_texture.FishTexture = None):
     
     # print(f"fish_body_mesh.top_spline_optimizer.key_ys = {fish_body_mesh.top_spline_optimizer.key_ys}")
     # print(f"fish_body_mesh.top_spline_optimizer.key_ts = {fish_body_mesh.top_spline_optimizer.key_ts}")
@@ -443,6 +446,10 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
 
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
+    if (fish_texture == None):
+        texture_map = dummy_texture
+    else:
+        texture_map = fish_texture.texture
 
     rendered_image = None
     with torch.no_grad():
@@ -459,7 +466,10 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
             sigmainv = data['metadata']['sigmainv'],
             texture_map=texture_map)
         # set body to blue
-        rendered_image = rendered_body_image * torch.tensor((0, 0, 1), dtype=torch.float, device='cuda', requires_grad=False)
+        if (fish_texture == None):
+            rendered_image = rendered_body_image * torch.tensor((0, 0, 1), dtype=torch.float, device='cuda', requires_grad=False)
+        else:
+            rendered_image = rendered_body_image
 
         # projected root position
         if (add_gt):
