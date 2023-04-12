@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider, Button, TextBox
 from pathlib import Path
 from datetime import datetime  
+from numpy import random  
 
 import kaolin as kal
 import numpy as np
@@ -56,7 +57,7 @@ def prepare_fin_meshes(hyperparameter:dict, load_path = None):
         fish_fin_meshes[fin_name] = fish_fin_mesh
     return fish_fin_meshes
 
-def train_mesh():
+def train_fish():
     # Hyperparameters
     image_weight = 1
     alpha_weight = 200
@@ -70,7 +71,7 @@ def train_mesh():
     origin_pos_lr = 5e-4
     length_xyz_lr = 5e-4
     render_res = 512
-    texture_res = 512
+    texture_res = 128
     sigmainv = 17000 # 3000~30000, for soft mask, higher sharper
 
     # fin
@@ -85,6 +86,7 @@ def train_mesh():
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
+    ian_utils.make_path(Path(output_path)/'texture')
 
     visualize_epoch_interval = 10
 
@@ -178,7 +180,7 @@ def train_mesh():
                                  hyperparameter['scheduler_gamma'])
 
     # init renderer
-    renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
+    renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res), 'bilinear')
     
     texture_start_train_epoch = 0
 
@@ -241,6 +243,9 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
     # override lr
     # TODO...
 
+    # reset texture
+    fish_texture.zero_grad()
+
     # reset mesh
     if(fish_body_mesh.dirty):
         with torch.no_grad():
@@ -248,10 +253,12 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
             # also update fins
             # TODO...
     
+    # jitter the camera to reduce unsampled texture pixels
+    random_direction = random.normal(0, 0.1)
     # render mesh
     rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
-        elev = data['metadata']['cam_elev'], 
-        azim = data['metadata']['cam_azim'], 
+        elev = data['metadata']['cam_elev'] + random_direction, 
+        azim = data['metadata']['cam_azim'] + random_direction, 
         r = data['metadata']['cam_radius'], 
         look_at_height = data['metadata']['cam_look_at_height'], 
         fovyangle = data['metadata']['cam_fovyangle'],
@@ -545,6 +552,8 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
         pylab.savefig(fig_path)
         pylab.close()
         print(f'fig saved at {fig_path}')
+        if (fish_texture is not None):
+            ian_utils.save_image(torch.clamp(texture_map, 0., 1.).permute(0, 2, 3, 1), Path(data['output_path'])/'texture', f'{image_name}_texture')
     else:
         pylab.waitforbuttonpress(0)
         pylab.cla()
@@ -579,7 +588,7 @@ def export_loss_history(path, loss_history):
 
 if __name__ == "__main__":
     start_time = time.time()
-    train_mesh()
+    train_fish()
     end_time = time.time()
     time_lapsed = end_time - start_time
     print(f'Total time elapsed: {time_lapsed}s')
