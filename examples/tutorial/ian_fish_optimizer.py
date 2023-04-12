@@ -21,6 +21,7 @@ import ian_utils
 import ian_renderer
 import ian_fish_fin_mesh
 import ian_fish_body_mesh
+import ian_fish_texture
 
 
 def prepare_body_mesh(hyperparameter:dict, load_path = None):
@@ -95,7 +96,7 @@ def train_mesh():
     # imported_texture_map = ian_utils.import_rgb(os.path.join(rendered_path_single, f'{0}_texture.png'))
     # texture_map = imported_texture_map.permute(2, 0, 1).unsqueeze(0).cuda()
     # texture_map.requires_grad = False
-    texture_map = torch.ones((1, 3, texture_res, texture_res), dtype=torch.float, device='cuda',
+    dummy_texture_map = torch.ones((1, 3, texture_res, texture_res), dtype=torch.float, device='cuda',
                             requires_grad=False)
     
     # get ground truth
@@ -119,6 +120,7 @@ def train_mesh():
 
     hyperparameter['render_res'] = render_res
     hyperparameter['texture_res'] = texture_res
+    hyperparameter['texture_lr'] = 5e-2
     hyperparameter['sigmainv'] = sigmainv
 
     hyperparameter['image_weight'] = image_weight
@@ -168,6 +170,12 @@ def train_mesh():
     else:
         fish_fin_meshes = prepare_fin_meshes(hyperparameter, None)
 
+    # init texture
+    fish_texture = ian_fish_texture.FishTexture(hyperparameter['texture_res'], 
+                                 hyperparameter['texture_lr'],
+                                 hyperparameter['scheduler_step_size'],
+                                 hyperparameter['scheduler_gamma'])
+
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res))
     
@@ -183,11 +191,11 @@ def train_mesh():
         
         # print result
         if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
-            visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch, True)
+            visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, True)
 
         # train body
         if (epoch < fin_start_train_epoch):
-            loss = train_body_mesh(fish_body_mesh, renderer, texture_map, data, epoch)
+            loss = train_body_mesh(fish_body_mesh, renderer, dummy_texture_map, data, epoch)
         # train fins
         else:
             loss = 0
@@ -196,7 +204,7 @@ def train_mesh():
                     fish_body_mesh.update_mesh(lod_x, lod_y)
             for fin_name in data['hyperparameter']['fin_list']:
                 loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, 
-                                       renderer, texture_map, 
+                                       renderer, dummy_texture_map, 
                                        data, data[fin_name + '_mask'], data['root_segmentation'][fin_name + '_mask'], 
                                        epoch)
 
@@ -204,8 +212,8 @@ def train_mesh():
         loss_history.append(loss.detach().cpu().numpy().tolist())
 
 
-    visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch + 1)
-    visualize_results(fish_body_mesh, fish_fin_meshes, renderer, texture_map, data, epoch + 1, True)
+    visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch + 1)
+    visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch + 1, True)
 
     # export stuff
     export_fish_body_json(data['output_path'], fish_body_mesh)
@@ -216,6 +224,47 @@ def train_mesh():
 
     export_loss_history(data['output_path'], loss_history)
 
+def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
+                   renderer:ian_renderer.Renderer, texture_map,
+                   data, 
+                   epoch):
+    lod_x = data['hyperparameter']['lod_x']
+    lod_y = data['hyperparameter']['lod_y']
+    image_weight = data['hyperparameter']['image_weight']
+    
+    # override lr
+    # TODO...
+
+    # reset mesh
+    if(fish_body_mesh.dirty):
+        with torch.no_grad():
+            fish_body_mesh.update_mesh(lod_x, lod_y)
+            # also update fins
+            # TODO...
+    
+    # render mesh
+    rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
+        elev = data['metadata']['cam_elev'], 
+        azim = data['metadata']['cam_azim'], 
+        r = data['metadata']['cam_radius'], 
+        look_at_height = data['metadata']['cam_look_at_height'], 
+        fovyangle = data['metadata']['cam_fovyangle'],
+        mesh = fish_body_mesh,
+        sigmainv = data['metadata']['sigmainv'],
+        texture_map=texture_map)
+    
+    ### Image Losses ###
+    image_loss = torch.mean(torch.abs(rendered_image - data['rgb'].cuda()))
+
+    loss = image_loss * image_weight
+
+    ### Update the parameters ###
+    loss.backward()
+
+    # step
+    # TODO
+
+    return loss
 
 def train_body_mesh(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
                    renderer:ian_renderer.Renderer, texture_map,
