@@ -186,7 +186,7 @@ class Renderer:
         # ian: torch.ones() makes all pixels inside any triangle get "1" (alpha)
         # ian: which means all the triangles are opaque
         face_attributes = [
-            mesh.face_uvs.repeat(self.batch_size, 1, 1, 1),
+            mesh.get_face_uvs().repeat(self.batch_size, 1, 1, 1),
             torch.ones((self.batch_size, mesh.faces.shape[0], 3, 1), device='cuda')
         ]
 

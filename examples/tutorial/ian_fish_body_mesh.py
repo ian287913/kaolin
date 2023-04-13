@@ -61,6 +61,7 @@ class FishBodyMesh:
         self.lod_x = None
         self.lod_y = None
         self.vertices = None
+        self.reshaped_face_uvs = None
 
         # initialize leaves
         self.origin_xy = torch.tensor((-1, 0), dtype=torch.float, device='cuda', requires_grad=True)
@@ -207,6 +208,25 @@ class FishBodyMesh:
         
         return torch.lerp(left, right, offset_u)
         
+
+    def get_face_uvs(self):
+        if (self.reshaped_face_uvs is None):
+            return self.face_uvs
+        else:
+            return self.reshaped_face_uvs
+    
+    def reshape_uvs(self, bounding_box:list):
+        self.uv_reshape_bb = {}
+        self.uv_reshape_bb['uv'] = [bounding_box[0], bounding_box[1]]
+        self.uv_reshape_bb['size'] = [bounding_box[2], bounding_box[3]]
+        uv = torch.tensor(self.uv_reshape_bb['uv'], dtype=torch.float, device='cuda')
+        size = torch.tensor(self.uv_reshape_bb['size'], dtype=torch.float, device='cuda')
+
+        self.reshaped_uvs = torch.add(torch.mul(self.uvs, size), uv)
+        # update  face_uvs
+        self.reshaped_face_uvs = kal.ops.mesh.index_vertices_by_faces(self.reshaped_uvs, self.face_uvs_idx).detach()
+        self.reshaped_face_uvs.requires_grad = False
+
     def update_mesh(self, lod_x, lod_y):
         self.lod_x = lod_x
         self.lod_y = lod_y

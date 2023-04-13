@@ -52,6 +52,10 @@ class FishFinMesh:
         self.uv_lr = uv_lr
         self.dir_lr = dir_lr
 
+        # init mesh
+        self.reshaped_face_uvs = None
+
+
         # init sil curve and bottom curve
         self.sil_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
             key_size,  
@@ -262,6 +266,24 @@ class FishFinMesh:
         projected_end_xy = ((projected_root_xys[1] + tensor_one)/tensor_two)
 
         return (projected_start_xy, projected_end_xy)
+
+    def get_face_uvs(self):
+        if (self.reshaped_face_uvs is None):
+            return self.face_uvs
+        else:
+            return self.reshaped_face_uvs
+    
+    def reshape_uvs(self, bounding_box:list):
+        self.uv_reshape_bb = {}
+        self.uv_reshape_bb['uv'] = [bounding_box[0], bounding_box[1]]
+        self.uv_reshape_bb['size'] = [bounding_box[2], bounding_box[3]]
+        uv = torch.tensor(self.uv_reshape_bb['uv'], dtype=torch.float, device='cuda')
+        size = torch.tensor(self.uv_reshape_bb['size'], dtype=torch.float, device='cuda')
+
+        self.reshaped_uvs = torch.add(torch.mul(self.uvs, size), uv)
+        # update  face_uvs
+        self.reshaped_face_uvs = kal.ops.mesh.index_vertices_by_faces(self.reshaped_uvs, self.face_uvs_idx).detach()
+        self.reshaped_face_uvs.requires_grad = False
 
     def update_mesh(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, lod_x, lod_y):
         clamped_start_uv = torch.clamp(self.start_uv, 0, 1)

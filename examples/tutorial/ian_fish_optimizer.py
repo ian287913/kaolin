@@ -11,6 +11,7 @@ from matplotlib.widgets import Slider, Button, TextBox
 from pathlib import Path
 from datetime import datetime  
 from numpy import random  
+import math  
 
 import kaolin as kal
 import numpy as np
@@ -71,7 +72,7 @@ def train_fish():
     origin_pos_lr = 5e-4
     length_xyz_lr = 5e-4
     render_res = 512
-    texture_res = 128
+    texture_res = 256
     sigmainv = 17000 # 3000~30000, for soft mask, higher sharper
 
     # fin
@@ -156,8 +157,8 @@ def train_fish():
     data['output_path'] = output_path
 
     # fins that will be instantiated
-    ##data['hyperparameter']['fin_list'] = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
-    data['hyperparameter']['fin_list'] = []
+    data['hyperparameter']['fin_list'] = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
+    ##data['hyperparameter']['fin_list'] = []
 
     # init body mesh
     load_body_mesh_from_json = True
@@ -187,11 +188,7 @@ def train_fish():
     ##################################### TRAINING #####################################
     loss_history = []
     for epoch in range(hyperparameter['num_epoch']):
-        # try to expand fin dir
-        if (epoch == 300 or epoch == 350):
-            for fin_name in data['hyperparameter']['fin_list']:
-                fin:ian_fish_fin_mesh.FishFinMesh = fish_fin_meshes[fin_name]
-                fin.reset_dir(fin.start_dir + 0.1, fin.end_dir - 0.1)
+
         
         # print result
         if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
@@ -200,7 +197,7 @@ def train_fish():
         
         # train texture
         if (epoch >= texture_start_train_epoch):
-            loss = train_texture(fish_body_mesh, renderer, fish_texture, data, epoch)
+            loss = train_texture(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data, epoch)
         # train body
         elif (epoch < fin_start_train_epoch):
             loss = train_body_mesh(fish_body_mesh, renderer, dummy_texture_map, data, epoch)
@@ -231,11 +228,25 @@ def train_fish():
 
     export_loss_history(data['output_path'], loss_history)
 
+# arrange each mesh vu in a NxN grid
+def reshape_mesh_uvs(meshes:list):
+    mesh_count = len(meshes)
+    grid_count = math.ceil(math.sqrt(mesh_count))
+    grid_size = 1. / float(grid_count)
+
+    for u in range(grid_count):
+        for v in range(grid_count):
+            idx = u * grid_count + v
+            if (idx >= mesh_count):
+                continue
+            meshes[idx].reshape_uvs([u * grid_size, v * grid_size, grid_size, grid_size])
+
 def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
-                   renderer:ian_renderer.Renderer,
-                   fish_texture:ian_fish_texture.FishTexture,
-                   data, 
-                   epoch):
+                  fish_fin_meshes:dict,
+                  renderer:ian_renderer.Renderer,
+                  fish_texture:ian_fish_texture.FishTexture,
+                  data, 
+                  epoch):
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
     image_weight = data['hyperparameter']['image_weight']
@@ -251,25 +262,35 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
         with torch.no_grad():
             fish_body_mesh.update_mesh(lod_x, lod_y)
             # also update fins
-            # TODO...
+            for fin_name, fin_mesh in fish_fin_meshes.items():
+                fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
     
+    # reshape uvs
+    all_meshes = list(fish_fin_meshes.values())
+    all_meshes.insert(0, fish_body_mesh)
+    reshape_mesh_uvs(all_meshes)
+
     # jitter the camera to reduce unsampled texture pixels
     random_direction = random.normal(0, 0.1)
-    # render mesh
-    rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
-        elev = data['metadata']['cam_elev'] + random_direction, 
-        azim = data['metadata']['cam_azim'] + random_direction, 
-        r = data['metadata']['cam_radius'], 
-        look_at_height = data['metadata']['cam_look_at_height'], 
-        fovyangle = data['metadata']['cam_fovyangle'],
-        mesh = fish_body_mesh,
-        sigmainv = data['metadata']['sigmainv'],
-        texture_map=fish_texture.texture)
-    
-    ### Image Losses ###
-    image_loss = torch.mean(torch.abs(rendered_image - data['rgb'].cuda()))
 
-    loss = image_loss * image_weight
+    # render mesh
+    loss = 0
+    for mesh in all_meshes:
+        rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
+            elev = data['metadata']['cam_elev'] + random_direction, 
+            azim = data['metadata']['cam_azim'] + random_direction, 
+            r = data['metadata']['cam_radius'], 
+            look_at_height = data['metadata']['cam_look_at_height'], 
+            fovyangle = data['metadata']['cam_fovyangle'],
+            mesh = mesh,
+            sigmainv = data['metadata']['sigmainv'],
+            texture_map=fish_texture.texture)
+    
+        ### Image Losses ###
+        image_loss = torch.mean(torch.abs(rendered_image - data['rgb'].cuda()))
+        loss += image_loss * image_weight
+
+    ##loss = image_loss * image_weight
 
     ### Update the parameters ###
     loss.backward()
@@ -287,7 +308,6 @@ def train_body_mesh(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
 
-    image_weight = data['hyperparameter']['image_weight']
     alpha_weight = data['hyperparameter']['alpha_weight']
     negative_ys_weight = data['hyperparameter']['negative_ys_weight']
     root_pos_weight = data['hyperparameter']['root_pos_weight']
@@ -374,6 +394,11 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     negative_ys_weight = data['hyperparameter']['negative_ys_weight']
     fin_uv_bound_weight = data['hyperparameter']['fin_uv_bound_weight']
     root_pos_weight = data['hyperparameter']['root_pos_weight']
+
+    # try to expand fin dir
+    if (epoch == 300 or epoch == 350):
+        for fin_name in data['hyperparameter']['fin_list']:
+            fish_fin_mesh.reset_dir(fish_fin_mesh.start_dir + 0.1, fish_fin_mesh.end_dir - 0.1)
 
     # set lr according to epoch
     t_lr = 0
@@ -503,10 +528,15 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                     sigmainv = data['metadata']['sigmainv'],
                     texture_map=texture_map)
                 
-                draw_color = (1, 0, 0)
-                if (fin_name == 'pelvic_fin'):
-                    draw_color = (0, 1, 0)
-                rendered_image += rendered_fin_image * torch.tensor(draw_color, dtype=torch.float, device='cuda', requires_grad=False)
+                
+                # set fin color and texture
+                if (fish_texture == None):
+                    draw_color = (1, 0, 0)
+                    if (fin_name == 'pelvic_fin'):
+                        draw_color = (0, 1, 0)
+                    rendered_image += rendered_fin_image * torch.tensor(draw_color, dtype=torch.float, device='cuda', requires_grad=False)
+                else:
+                    rendered_image += rendered_fin_image
 
                 # projected root position
                 if (add_gt):
