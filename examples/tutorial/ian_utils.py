@@ -21,7 +21,32 @@ def make_path(path: Path) -> Path:
     path.mkdir(exist_ok=True,parents=True)
     return path
 
-############################ Camera transform & projection ############################
+############################ Combine Meshes ############################
+def combine_meshes(meshes:list):
+    combined_mesh = {}
+    combined_mesh['vertices'] = []
+    combined_mesh['faces'] = []
+    combined_mesh['uvs'] = []
+    accumulated_idx = 1
+    for mesh in meshes:
+        combined_mesh['vertices'].extend(mesh.vertices.squeeze(0).detach().cpu().numpy().tolist())
+        combined_mesh['faces'].extend((mesh.faces + accumulated_idx).detach().cpu().numpy().tolist())
+        combined_mesh['uvs'].extend(mesh.uvs.squeeze(0).detach().cpu().numpy().tolist())
+        accumulated_idx += len(mesh.vertices.squeeze(0))
+    return combined_mesh
+
+def export_mesh(mesh, path):
+    obj_str = ""
+    for vertex in mesh['vertices']:
+        obj_str += f'v {vertex[0]} {vertex[1]} {vertex[2]}\n'
+    for face in mesh['faces']:
+        obj_str += f'f {face[0]}/{face[0]} {face[1]}/{face[1]} {face[2]}/{face[2]}\n'
+    for uv in mesh['uvs']:
+        obj_str += f'vt {uv[0]} {uv[1]}\n'
+    with open(path, 'w') as f:
+        f.write(obj_str)
+
+############################ recenter vertices ############################
 
 def recenter_vertices(vertices, vertice_shift):
     """Recenter vertices on vertice_shift for better optimization"""

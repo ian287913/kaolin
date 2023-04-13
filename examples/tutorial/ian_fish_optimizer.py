@@ -114,7 +114,7 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 500
+    hyperparameter['num_epoch'] = 1
     hyperparameter['fin_start_train_epoch'] = fin_start_train_epoch
     hyperparameter['mask_loss_enable_epoch'] = mask_loss_enable_epoch
     hyperparameter['key_size'] = key_size
@@ -227,6 +227,8 @@ def train_fish():
     export_hyperparameter_json(data['output_path'], data['hyperparameter'])
 
     export_loss_history(data['output_path'], loss_history)
+
+    export_meshes(fish_body_mesh, fish_fin_meshes, data['output_path'])
 
 # arrange each mesh vu in a NxN grid
 def reshape_mesh_uvs(meshes:list):
@@ -615,6 +617,14 @@ def export_loss_history(path, loss_history):
         for loss in loss_history:
             fp.write(str(loss) + "\n")
     print(f'file exported to {filepath}.')
+
+def export_meshes(fish_body_mesh, fish_fin_meshes, path):
+    all_meshes = list(fish_fin_meshes.values())
+    all_meshes.insert(0, fish_body_mesh)
+
+    combined_mesh = ian_utils.combine_meshes(all_meshes)
+    filepath = os.path.join(path,'combined_mesh.obj')
+    ian_utils.export_mesh(combined_mesh, filepath)
 
 if __name__ == "__main__":
     start_time = time.time()
