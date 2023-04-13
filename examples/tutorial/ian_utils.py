@@ -31,7 +31,7 @@ def combine_meshes(meshes:list):
     for mesh in meshes:
         combined_mesh['vertices'].extend(mesh.vertices.squeeze(0).detach().cpu().numpy().tolist())
         combined_mesh['faces'].extend((mesh.faces + accumulated_idx).detach().cpu().numpy().tolist())
-        combined_mesh['uvs'].extend(mesh.uvs.squeeze(0).detach().cpu().numpy().tolist())
+        combined_mesh['uvs'].extend(mesh.reshaped_uvs.squeeze(0).detach().cpu().numpy().tolist())
         accumulated_idx += len(mesh.vertices.squeeze(0))
     return combined_mesh
 
@@ -39,10 +39,11 @@ def export_mesh(mesh, path):
     obj_str = ""
     for vertex in mesh['vertices']:
         obj_str += f'v {vertex[0]} {vertex[1]} {vertex[2]}\n'
-    for face in mesh['faces']:
-        obj_str += f'f {face[0]}/{face[0]} {face[1]}/{face[1]} {face[2]}/{face[2]}\n'
     for uv in mesh['uvs']:
         obj_str += f'vt {uv[0]} {uv[1]}\n'
+    for face in mesh['faces']:
+        obj_str += f'f {face[0]}/{face[0]} {face[1]}/{face[1]} {face[2]}/{face[2]}\n'
+    
     with open(path, 'w') as f:
         f.write(obj_str)
 
