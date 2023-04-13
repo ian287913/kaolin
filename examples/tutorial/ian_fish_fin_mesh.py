@@ -53,6 +53,7 @@ class FishFinMesh:
         self.dir_lr = dir_lr
 
         # init mesh
+        self.reshaped_uvs = None
         self.reshaped_face_uvs = None
 
 
@@ -102,6 +103,7 @@ class FishFinMesh:
         self.parameters['end_dir'] = self.end_dir
         self.parameters['init_height'] = init_height
         self.parameters['sil_spline'] = self.sil_spline_optimizer.get_json_dict()
+        self.parameters['uv_reshape_bb'] = {}
 
         self.optimizer_parameters = {}
         self.optimizer_parameters['uv_lr'] = self.uv_lr
@@ -114,7 +116,8 @@ class FishFinMesh:
                        start_uv, end_uv,
                        start_dir, end_dir,
                        init_height,
-                       sil_spline_json_dict):
+                       sil_spline_json_dict,
+                       uv_reshape_bb):
 
         # init top curve and bottom curve
         self.sil_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
@@ -135,6 +138,8 @@ class FishFinMesh:
         self.parameters['end_dir'] = self.end_dir
         self.parameters['init_height'] = init_height
         self.parameters['sil_spline'] = self.sil_spline_optimizer.get_json_dict()
+        self.parameters['uv_reshape_bb'] = uv_reshape_bb
+
 
     def set_optimizer(self, 
                       scheduler_step_size = 20, scheduler_gamma = 0.5,
@@ -274,11 +279,11 @@ class FishFinMesh:
             return self.reshaped_face_uvs
     
     def reshape_uvs(self, bounding_box:list):
-        self.uv_reshape_bb = {}
-        self.uv_reshape_bb['uv'] = [bounding_box[0], bounding_box[1]]
-        self.uv_reshape_bb['size'] = [bounding_box[2], bounding_box[3]]
-        uv = torch.tensor(self.uv_reshape_bb['uv'], dtype=torch.float, device='cuda')
-        size = torch.tensor(self.uv_reshape_bb['size'], dtype=torch.float, device='cuda')
+        self.parameters['uv_reshape_bb'] = {}
+        self.parameters['uv_reshape_bb']['uv'] = [bounding_box[0], bounding_box[1]]
+        self.parameters['uv_reshape_bb']['size'] = [bounding_box[2], bounding_box[3]]
+        uv = torch.tensor(self.parameters['uv_reshape_bb']['uv'], dtype=torch.float, device='cuda')
+        size = torch.tensor(self.parameters['uv_reshape_bb']['size'], dtype=torch.float, device='cuda')
 
         self.reshaped_uvs = torch.add(torch.mul(self.uvs, size), uv)
         # update  face_uvs
@@ -399,12 +404,18 @@ class FishFinMesh:
         obj_text = codecs.open(json_path, 'r', encoding='utf-8').read()
         json_dict = json.loads(obj_text) #This reads json to list
 
+        if ('uv_reshape_bb' in json_dict['parameters']):
+            uv_reshape_bb_dict = {'uv':np.array(json_dict['parameters']['uv_reshape_bb']['uv']), 'size':np.array(json_dict['parameters']['uv_reshape_bb']['size'])}
+        else:
+            uv_reshape_bb_dict = None
+
         self.set_parameters(start_uv=np.array(json_dict['parameters']['start_uv']),
                             end_uv=np.array(json_dict['parameters']['end_uv']),
                             start_dir=np.array(json_dict['parameters']['start_dir']),
                             end_dir=np.array(json_dict['parameters']['end_dir']),
                             init_height=np.array(json_dict['parameters']['init_height']),
-                            sil_spline_json_dict=json_dict['parameters']['sil_spline'])
+                            sil_spline_json_dict=json_dict['parameters']['sil_spline'],
+                            uv_reshape_bb=uv_reshape_bb_dict)
 
         self.set_optimizer(scheduler_step_size=json_dict['optimizer_parameters']['scheduler_step_size'],
                            scheduler_gamma=json_dict['optimizer_parameters']['scheduler_gamma'],

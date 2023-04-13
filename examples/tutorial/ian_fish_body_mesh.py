@@ -61,6 +61,7 @@ class FishBodyMesh:
         self.lod_x = None
         self.lod_y = None
         self.vertices = None
+        self.reshaped_uvs = None
         self.reshaped_face_uvs = None
 
         # initialize leaves
@@ -77,6 +78,7 @@ class FishBodyMesh:
         self.parameters['length_x'] = self.length_x
         self.parameters['length_y'] = self.length_y
         self.parameters['length_z'] = self.length_z
+        self.parameters['uv_reshape_bb'] = {}
 
         self.parameters['top_spline'] = self.top_spline_optimizer.get_json_dict()
         self.parameters['bottom_spline'] = self.bottom_spline_optimizer.get_json_dict()
@@ -87,7 +89,8 @@ class FishBodyMesh:
     def set_parameters(self, 
                        origin_xy, origin_z,
                        length_x, length_y, length_z,
-                       top_spline_json_dict, bottom_spline_json_dict):
+                       top_spline_json_dict, bottom_spline_json_dict,
+                       uv_reshape_bb):
         self.dirty = True
 
         # init top curve and bottom curve
@@ -116,6 +119,7 @@ class FishBodyMesh:
         self.parameters['length_x'] = self.length_x
         self.parameters['length_y'] = self.length_y
         self.parameters['length_z'] = self.length_z
+        self.parameters['uv_reshape_bb'] = uv_reshape_bb
         
         self.parameters['top_spline'] = self.top_spline_optimizer.get_json_dict()
         self.parameters['bottom_spline'] = self.bottom_spline_optimizer.get_json_dict()
@@ -216,11 +220,11 @@ class FishBodyMesh:
             return self.reshaped_face_uvs
     
     def reshape_uvs(self, bounding_box:list):
-        self.uv_reshape_bb = {}
-        self.uv_reshape_bb['uv'] = [bounding_box[0], bounding_box[1]]
-        self.uv_reshape_bb['size'] = [bounding_box[2], bounding_box[3]]
-        uv = torch.tensor(self.uv_reshape_bb['uv'], dtype=torch.float, device='cuda')
-        size = torch.tensor(self.uv_reshape_bb['size'], dtype=torch.float, device='cuda')
+        self.parameters['uv_reshape_bb'] = {}
+        self.parameters['uv_reshape_bb']['uv'] = [bounding_box[0], bounding_box[1]]
+        self.parameters['uv_reshape_bb']['size'] = [bounding_box[2], bounding_box[3]]
+        uv = torch.tensor(self.parameters['uv_reshape_bb']['uv'], dtype=torch.float, device='cuda')
+        size = torch.tensor(self.parameters['uv_reshape_bb']['size'], dtype=torch.float, device='cuda')
 
         self.reshaped_uvs = torch.add(torch.mul(self.uvs, size), uv)
         # update  face_uvs
@@ -347,13 +351,20 @@ class FishBodyMesh:
         obj_text = codecs.open(json_path, 'r', encoding='utf-8').read()
         json_dict = json.loads(obj_text) #This reads json to list
 
+        if ('uv_reshape_bb' in json_dict['parameters']):
+            uv_reshape_bb_dict = {'uv':np.array(json_dict['parameters']['uv_reshape_bb']['uv']), 'size':np.array(json_dict['parameters']['uv_reshape_bb']['size'])}
+        else:
+            uv_reshape_bb_dict = None
+
         self.set_parameters(origin_xy=np.array(json_dict['parameters']['origin_xy']),
                             origin_z=np.array(json_dict['parameters']['origin_z']),
                             length_x=np.array(json_dict['parameters']['length_x']),
                             length_y=np.array(json_dict['parameters']['length_y']),
                             length_z=np.array(json_dict['parameters']['length_z']),
                             top_spline_json_dict=json_dict['parameters']['top_spline'],
-                            bottom_spline_json_dict=json_dict['parameters']['bottom_spline'])
+                            bottom_spline_json_dict=json_dict['parameters']['bottom_spline'],
+                            uv_reshape_bb=uv_reshape_bb_dict)
+        
 
         self.set_optimizer(origin_pos_lr=json_dict['optimizer_parameters']['origin_pos_lr'],
                            length_xyz_lr=json_dict['optimizer_parameters']['length_xyz_lr'],
