@@ -160,15 +160,19 @@ class Renderer:
         return vertices_image
 
 
-    def render_image_and_mask_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, mesh, sigmainv = 7000, texture_map = None):
+    def render_image_and_mask_with_camera_params(self, elev, azim, r, look_at_height, fovyangle, mesh, sigmainv = 7000, texture_map = None, offset = None):
         cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
         cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
         if (texture_map == None):
             texture_map = mesh.texture_map 
         # render image and mask
-        return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh, sigmainv, texture_map)
+        return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh, sigmainv, texture_map, offset)
 
-    def render_image_and_mask(self, cam_proj, cam_transform, height, width, mesh, sigmainv = 7000, texture_map = None):
+    def render_image_and_mask(self, cam_proj, cam_transform, height, width, mesh, sigmainv = 7000, texture_map = None, offset = None):
+        if (offset is not None):
+            camera_transform = cam_transform + offset
+        else:
+            camera_transform = cam_transform
 
         ### Prepare mesh data with projection regarding to camera ###
         face_vertices_camera, face_vertices_image, face_normals = \
@@ -176,7 +180,7 @@ class Renderer:
                 mesh.vertices.repeat(self.batch_size, 1, 1),
                 mesh.faces,
                 cam_proj,
-                camera_transform=cam_transform
+                camera_transform=camera_transform
             )
 
         ### Perform Rasterization ###

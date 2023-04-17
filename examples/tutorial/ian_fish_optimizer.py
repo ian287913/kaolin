@@ -72,7 +72,7 @@ def train_fish():
     origin_pos_lr = 5e-4
     length_xyz_lr = 5e-4
     render_res = 512
-    texture_res = 256
+    texture_res = 512
     sigmainv = 17000 # 3000~30000, for soft mask, higher sharper
 
     # fin
@@ -114,7 +114,7 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 1
+    hyperparameter['num_epoch'] = 100
     hyperparameter['fin_start_train_epoch'] = fin_start_train_epoch
     hyperparameter['mask_loss_enable_epoch'] = mask_loss_enable_epoch
     hyperparameter['key_size'] = key_size
@@ -277,20 +277,21 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
     reshape_mesh_uvs(all_meshes)
 
     # jitter the camera to reduce unsampled texture pixels
-    random_direction = random.normal(0, 0.1)
+    jitter_offset = torch.tensor((random.normal(0, 0.001), random.normal(0, 0.001), random.normal(0, 0)), dtype=torch.float, device='cuda', requires_grad=False)
 
     # render mesh
     loss = 0
     for mesh in all_meshes:
         rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
-            elev = data['metadata']['cam_elev'] + random_direction, 
-            azim = data['metadata']['cam_azim'] + random_direction, 
+            elev = data['metadata']['cam_elev'], 
+            azim = data['metadata']['cam_azim'], 
             r = data['metadata']['cam_radius'], 
             look_at_height = data['metadata']['cam_look_at_height'], 
             fovyangle = data['metadata']['cam_fovyangle'],
             mesh = mesh,
             sigmainv = data['metadata']['sigmainv'],
-            texture_map=fish_texture.texture)
+            texture_map = fish_texture.texture,
+            offset = jitter_offset)
     
         ### Image Losses ###
         image_loss = torch.mean(torch.abs(rendered_image - data['rgb'].cuda()))
