@@ -301,6 +301,17 @@ class FishFinMesh:
             self.sil_spline_optimizer.calculate_ys_with_lod_x(lod_x),
             lod_y)
 
+    # https://stackoverflow.com/questions/6802577/rotation-of-3d-vector
+    def rotate_vector3_along_axis(self, v3:torch.Tensor, axis, theta):
+        print(f'rotate_vector3_along_axis: v3 = {v3}')
+        print(f'rotate_vector3_along_axis: axis = {axis}')
+
+        eye = torch.eye(3, dtype=v3.dtype, device=v3.device, requires_grad=False)
+        ##M = torch.matrix_exp(torch.cross(eye, axis/normalize(axis, p=2.0, dim=0)*theta))
+        M = torch.matrix_exp(torch.cross(eye, normalize(axis, p=2.0, dim=0)*theta))
+        return torch.matmul(M, v3)
+
+
     def set_mesh_by_samples(self, root_xyzs: torch.Tensor, ys: torch.Tensor, lod_y):
         assert lod_y > 1, f'lod_y should greater than 1!'
         assert root_xyzs.shape[0] > 1, f'root_xyzs.shape[0] should greater than 1!'
@@ -308,6 +319,7 @@ class FishFinMesh:
         
         # calculate root_dirs (by root_xyzs direction).rotate(90 degree)
         # TODO: the "dx" could be smaller to increase precision
+        # TODO: consider all root_xyzs are at the same position...
         grow_dirs = (root_xyzs[1] - root_xyzs[0]).unsqueeze(0)
         for idx in range(1, root_xyzs.shape[0]):
             root_dir = root_xyzs[idx] - root_xyzs[idx - 1]
@@ -316,6 +328,14 @@ class FishFinMesh:
             grow_dir_z = torch.tensor(0, dtype=grow_dir_x.dtype, device=grow_dir_x.device, requires_grad=False)
             stacked_grow_dir = torch.stack((grow_dir_x, grow_dir_y, grow_dir_z), -1)
             grow_dir = normalize(stacked_grow_dir, p=2.0, dim=0) * ys[idx]
+            if (hasattr(self, 'z_scale')):
+                grow_dir[2] = ys[idx] * self.z_scale
+            # rotate grow_dir alone the root_dir
+            # print(f'before: grow_dir = {grow_dir}')
+            # rotated_grow_dir = self.rotate_vector3_along_axis(grow_dir, root_dir, 3.14/6.)
+            # print(f'after: grow_dir = {rotated_grow_dir}')
+            # print("")
+
             grow_dirs = torch.cat((grow_dirs, grow_dir.unsqueeze(0)), 0)
 
         # rotate grow_xyzs by lerped start_dir and end_dir

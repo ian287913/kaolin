@@ -185,6 +185,10 @@ def train_fish():
     
     texture_start_train_epoch = 0
 
+    ## set pectoral fin
+    if ('pectoral_fin' in fish_fin_meshes.keys()):
+        fish_fin_meshes['pectoral_fin'].z_scale = 0.2
+
     ##################################### TRAINING #####################################
     loss_history = []
     for epoch in range(hyperparameter['num_epoch']):
