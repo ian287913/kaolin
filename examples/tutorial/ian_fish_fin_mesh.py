@@ -22,7 +22,7 @@ import ian_cubic_spline_optimizer
 import ian_utils
 import ian_renderer
 import ian_fish_body_mesh
-
+import tools.ian_rotation
 
 """
 [FishFinMesh]
