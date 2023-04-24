@@ -114,7 +114,7 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 600
+    hyperparameter['num_epoch'] = 1
     hyperparameter['fin_start_train_epoch'] = fin_start_train_epoch
     hyperparameter['mask_loss_enable_epoch'] = mask_loss_enable_epoch
     hyperparameter['key_size'] = key_size
@@ -193,9 +193,12 @@ def train_fish():
     ## set pectoral fin
     if ('pectoral_fin' in fish_fin_meshes.keys()):
         fish_fin_meshes['pectoral_fin'].z_scale = 0.2
+        fish_fin_meshes['pectoral_fin'].grow_mode = 'double_sided'
+        fish_fin_meshes['pectoral_fin'].wave_angle = torch.tensor(-torch.pi/4, dtype=torch.float, device='cuda', requires_grad=False)
 
     ##################################### TRAINING #####################################
     loss_history = []
+    epoch = 0
     for epoch in range(hyperparameter['num_epoch']):
 
         

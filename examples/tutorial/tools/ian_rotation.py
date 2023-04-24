@@ -63,9 +63,13 @@ def axis_angle_to_quaternion(axis: torch.Tensor, angle: torch.Tensor) -> torch.T
     return quaternion
 
 def axis_angle_to_rotation_matrix(axis: torch.Tensor, radius: torch.Tensor) -> torch.Tensor:
-    quaternion = axis_angle_to_quaternion(axis, radius);
+    quaternion = axis_angle_to_quaternion(axis, radius)
     rotation_matrix = quaternion_to_matrix(quaternion)
     return rotation_matrix
+
+def rotate_v3_along_axis(vector: torch.Tensor, axis: torch.Tensor, radius: torch.Tensor) -> torch.Tensor:
+    rotation_matrix = axis_angle_to_rotation_matrix(axis, radius)
+    return torch.matmul(rotation_matrix, vector)
 
 def test():
     pi = torch.pi

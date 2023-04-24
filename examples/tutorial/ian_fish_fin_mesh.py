@@ -295,9 +295,10 @@ class FishFinMesh:
         clamped_end_uv = torch.clamp(self.end_uv, 0, 1)
         root_uvs = ian_utils.torch_linspace(clamped_start_uv, clamped_end_uv, lod_x)
         root_xyzs = body_mesh.get_positions_by_uvs(root_uvs)
-
+        normal_xyzs = body_mesh.get_normals_by_uvs(root_uvs)
         self.set_mesh_by_samples(
             root_xyzs, 
+            normal_xyzs,
             self.sil_spline_optimizer.calculate_ys_with_lod_x(lod_x),
             lod_y)
 
@@ -312,7 +313,7 @@ class FishFinMesh:
         return torch.matmul(M, v3)
 
 
-    def set_mesh_by_samples(self, root_xyzs: torch.Tensor, ys: torch.Tensor, lod_y):
+    def set_mesh_by_samples(self, root_xyzs: torch.Tensor, normal_xyzs: torch.Tensor, ys: torch.Tensor, lod_y):
         assert lod_y > 1, f'lod_y should greater than 1!'
         assert root_xyzs.shape[0] > 1, f'root_xyzs.shape[0] should greater than 1!'
         assert ys.shape[0] > 1, f'ys.shape[0] should greater than 1!'
@@ -320,26 +321,46 @@ class FishFinMesh:
         # calculate root_dirs (by root_xyzs direction).rotate(90 degree)
         # TODO: the "dx" could be smaller to increase precision
         # TODO: consider all root_xyzs are at the same position...
+        # TODO: normal_xyzs is not normalized
+        root_dir = root_xyzs[root_xyzs.shape[0]-1] - root_xyzs[0]
         grow_dirs = (root_xyzs[1] - root_xyzs[0]).unsqueeze(0)
         for idx in range(1, root_xyzs.shape[0]):
-            root_dir = root_xyzs[idx] - root_xyzs[idx - 1]
-            grow_dir_x = -root_dir[1]
-            grow_dir_y = root_dir[0]
-            grow_dir_z = torch.tensor(0, dtype=grow_dir_x.dtype, device=grow_dir_x.device, requires_grad=False)
-            stacked_grow_dir = torch.stack((grow_dir_x, grow_dir_y, grow_dir_z), -1)
-            grow_dir = normalize(stacked_grow_dir, p=2.0, dim=0) * ys[idx]
-            if (hasattr(self, 'z_scale')):
-                grow_dir[2] = ys[idx] * self.z_scale
+
+            if (hasattr(self, 'grow_mode') and 
+                (self.grow_mode == 'double_sided') and
+                hasattr(self, 'wave_angle')):
+                # apply rotate_dir and wave_angle
+                grow_dir = normalize(normal_xyzs[idx], p=2.0, dim=0) * ys[idx]
+                side_dir = torch.cross(root_dir, normal_xyzs[idx])
+                rotate_angel = torch.lerp(self.start_dir, self.end_dir, idx / (root_xyzs.shape[0]-1))
+                rotated_dir = tools.ian_rotation.rotate_v3_along_axis(grow_dir, side_dir, rotate_angel)
+                waved_rotated_dir = tools.ian_rotation.rotate_v3_along_axis(rotated_dir.squeeze(0), root_dir, self.wave_angle)
+                grow_dirs = torch.cat((grow_dirs, waved_rotated_dir.unsqueeze(0)), 0)
+
+            else:
+                grow_dir_x = -root_dir[1]
+                grow_dir_y = root_dir[0]
+                grow_dir_z = torch.tensor(0, dtype=grow_dir_x.dtype, device=grow_dir_x.device, requires_grad=False)
+                stacked_grow_dir = torch.stack((grow_dir_x, grow_dir_y, grow_dir_z), -1)
+                grow_dir = normalize(stacked_grow_dir, p=2.0, dim=0) * ys[idx]
+                grow_dirs = torch.cat((grow_dirs, grow_dir.unsqueeze(0)), 0)
+
+
+            # if (hasattr(self, 'z_scale')):
+            #     grow_dir[2] = ys[idx] * self.z_scale
             # rotate grow_dir alone the root_dir
             # print(f'before: grow_dir = {grow_dir}')
             # rotated_grow_dir = self.rotate_vector3_along_axis(grow_dir, root_dir, 3.14/6.)
             # print(f'after: grow_dir = {rotated_grow_dir}')
             # print("")
 
-            grow_dirs = torch.cat((grow_dirs, grow_dir.unsqueeze(0)), 0)
-
-        # rotate grow_xyzs by lerped start_dir and end_dir
-        rotated_grow_xyzs = self.rotate_grow_xyzs(grow_dirs)
+        if (hasattr(self, 'grow_mode') and 
+            (self.grow_mode == 'double_sided') and
+            hasattr(self, 'wave_angle')):
+            rotated_grow_xyzs = grow_dirs
+        else:
+            # rotate grow_xyzs by lerped start_dir and end_dir
+            rotated_grow_xyzs = self.rotate_grow_xyzs(grow_dirs)
 
 
         # vertices
@@ -386,6 +407,7 @@ class FishFinMesh:
         self.face_uvs = kal.ops.mesh.index_vertices_by_faces(self.uvs, self.face_uvs_idx).detach()
         self.face_uvs.requires_grad = False
     
+    # NOTICE this is only for side fins. Use rotate_grow_xyzs_along_axis() for real rotation
     def rotate_grow_xyzs(self, grow_xyzs: torch.Tensor):
         rotated_grow_xyzs = torch.zeros((0, 3), dtype=grow_xyzs.dtype, device=grow_xyzs.device,
                                 requires_grad=True)
@@ -399,6 +421,20 @@ class FishFinMesh:
             y = grow_xyz[0] * torch.sin(angle) + grow_xyz[1] * torch.cos(angle)
             z = grow_xyz[2] * torch.ones(1, dtype=grow_xyzs.dtype, device=grow_xyzs.device)
             rotated_xyz = torch.stack((x, y, z), -1)
+            rotated_grow_xyzs = torch.cat((rotated_grow_xyzs, rotated_xyz), 0)
+
+        return rotated_grow_xyzs
+    
+    def rotate_grow_xyzs_along_axis(self, grow_xyzs: torch.Tensor, axis: torch.Tensor):
+        rotated_grow_xyzs = torch.zeros((0, 3), dtype=grow_xyzs.dtype, device=grow_xyzs.device,
+                                requires_grad=True)
+        # angles
+        rotate_dirs = ian_utils.torch_linspace(self.start_dir, self.end_dir, grow_xyzs.shape[0])
+
+        # for each column
+        for idx, grow_xyz in enumerate(grow_xyzs):
+            angle = rotate_dirs[idx]
+            rotated_xyz = tools.ian_rotation.rotate_v3_along_axis(grow_xyz, axis, angle)
             rotated_grow_xyzs = torch.cat((rotated_grow_xyzs, rotated_xyz), 0)
 
         return rotated_grow_xyzs
