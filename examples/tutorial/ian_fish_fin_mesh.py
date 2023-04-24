@@ -183,7 +183,8 @@ class FishFinMesh:
         self.set_parameters(self.parameters['start_uv'], self.parameters['end_uv'], 
                             start_dir, end_dir, 
                             self.parameters['init_height'],
-                            ian_utils.convert_tensor_dict(self.parameters['sil_spline'].copy()))
+                            ian_utils.convert_tensor_dict(self.parameters['sil_spline'].copy()),
+                            uv_reshape_bb=self.parameters['uv_reshape_bb'])
         
         self.set_optimizer(self.optimizer_parameters['scheduler_step_size'], self.optimizer_parameters['scheduler_gamma'],
                            self.optimizer_parameters['uv_lr'], self.optimizer_parameters['dir_lr'])
@@ -295,7 +296,10 @@ class FishFinMesh:
         clamped_end_uv = torch.clamp(self.end_uv, 0, 1)
         root_uvs = ian_utils.torch_linspace(clamped_start_uv, clamped_end_uv, lod_x)
         root_xyzs = body_mesh.get_positions_by_uvs(root_uvs)
-        normal_xyzs = body_mesh.get_normals_by_uvs(root_uvs)
+        
+        normal_xyzs = ian_utils.torch_linspace(body_mesh.get_normal_by_uv(clamped_start_uv), body_mesh.get_normal_by_uv(clamped_end_uv), lod_x)
+        ##normal_xyzs = body_mesh.get_normals_by_uvs(root_uvs)
+
         self.set_mesh_by_samples(
             root_xyzs, 
             normal_xyzs,
@@ -460,7 +464,7 @@ class FishFinMesh:
         obj_text = codecs.open(json_path, 'r', encoding='utf-8').read()
         json_dict = json.loads(obj_text) #This reads json to list
 
-        if ('uv_reshape_bb' in json_dict['parameters']):
+        if ('uv_reshape_bb' in json_dict['parameters'] and json_dict['parameters']['uv_reshape_bb'] is not None):
             uv_reshape_bb_dict = {'uv':np.array(json_dict['parameters']['uv_reshape_bb']['uv']), 'size':np.array(json_dict['parameters']['uv_reshape_bb']['size'])}
         else:
             uv_reshape_bb_dict = None

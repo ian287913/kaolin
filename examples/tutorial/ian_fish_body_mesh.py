@@ -56,6 +56,21 @@ class FishBodyMesh:
             t_lr=t_lr, 
             scheduler_step_size=scheduler_step_size, 
             scheduler_gamma=scheduler_gamma)
+        # thickness splines
+        self.thickness_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
+            key_size,  
+            y_lr=y_lr, 
+            t_lr=t_lr, 
+            scheduler_step_size=scheduler_step_size, 
+            scheduler_gamma=scheduler_gamma,
+            init_key_ys=0)
+        self.stream_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
+            key_size,  
+            y_lr=y_lr, 
+            t_lr=t_lr, 
+            scheduler_step_size=scheduler_step_size, 
+            scheduler_gamma=scheduler_gamma,
+            init_key_ys=0)
         
         # init mesh
         self.lod_x = None
@@ -82,6 +97,8 @@ class FishBodyMesh:
 
         self.parameters['top_spline'] = self.top_spline_optimizer.get_json_dict()
         self.parameters['bottom_spline'] = self.bottom_spline_optimizer.get_json_dict()
+        self.parameters['thickness_spline'] = self.bottom_spline_optimizer.get_json_dict()
+        self.parameters['stream_spline'] = self.bottom_spline_optimizer.get_json_dict()
         
         self.set_optimizer(scheduler_step_size=scheduler_step_size, scheduler_gamma=scheduler_gamma,
                            origin_pos_lr=origin_pos_lr, length_xyz_lr=length_xyz_lr)
@@ -90,15 +107,22 @@ class FishBodyMesh:
                        origin_xy, origin_z,
                        length_x, length_y, length_z,
                        top_spline_json_dict, bottom_spline_json_dict,
+                       thickness_spline_json_dict, stream_spline_json_dict,
                        uv_reshape_bb):
         self.dirty = True
 
         # init top curve and bottom curve
         self.top_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
         self.bottom_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
+        self.thickness_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
+        self.stream_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
         
         self.top_spline_optimizer.load_from_json_dict(top_spline_json_dict)
         self.bottom_spline_optimizer.load_from_json_dict(bottom_spline_json_dict)
+        if (thickness_spline_json_dict is not None):
+            self.thickness_spline_optimizer.load_from_json_dict(thickness_spline_json_dict)
+        if (stream_spline_json_dict is not None):
+            self.stream_spline_optimizer.load_from_json_dict(stream_spline_json_dict)
         
         # init mesh
         self.lod_x = None
@@ -123,6 +147,8 @@ class FishBodyMesh:
         
         self.parameters['top_spline'] = self.top_spline_optimizer.get_json_dict()
         self.parameters['bottom_spline'] = self.bottom_spline_optimizer.get_json_dict()
+        self.parameters['thickness_spline'] = self.thickness_spline_optimizer.get_json_dict()
+        self.parameters['stream_spline'] = self.stream_spline_optimizer.get_json_dict()
         
         
     def set_optimizer(self, 
@@ -167,6 +193,9 @@ class FishBodyMesh:
     def zero_grad(self):
         self.top_spline_optimizer.zero_grad()
         self.bottom_spline_optimizer.zero_grad()
+        # do we need this?
+        self.thickness_spline_optimizer.zero_grad()
+        self.stream_spline_optimizer.zero_grad()
 
         self.origin_pos_optim.zero_grad()
         self.length_xyz_optim.zero_grad()
@@ -177,6 +206,7 @@ class FishBodyMesh:
         if (step_splines == True):
             self.top_spline_optimizer.step()
             self.bottom_spline_optimizer.step()
+            # no need to step thickness splines
 
         self.length_xyz_optim.step()
         self.origin_pos_optim.step()
@@ -272,27 +302,33 @@ class FishBodyMesh:
             ian_renderer.calculate_roots(self.origin_pos, self.length_xyz, lod_x), 
             self.top_spline_optimizer.calculate_ys_with_lod_x(lod_x),
             self.bottom_spline_optimizer.calculate_ys_with_lod_x(lod_x), 
+            self.thickness_spline_optimizer.calculate_ys_with_lod_x(lod_y), 
+            self.stream_spline_optimizer.calculate_ys_with_lod_x(lod_x), 
             lod_y)
 
-    def set_mesh_by_samples(self, roots: torch.Tensor, top_ys: torch.Tensor, bottom_ys: torch.Tensor, lod_y):
+    def set_mesh_by_samples(self, roots: torch.Tensor, top_ys: torch.Tensor, bottom_ys: torch.Tensor, thickness_ys: torch.Tensor, stream_ys: torch.Tensor, lod_y):
         assert lod_y > 1, f'lod_y should greater than 1!'
         assert roots.shape[0] > 1, f'roots.shape[0] should greater than 1!'
         assert top_ys.shape[0] > 1, f'top_ys.shape[0] should greater than 1!'
-        assert bottom_ys.shape[0] > 1, f'bottom_ys.shape[0] should greater than 1!'
+        assert top_ys.shape[0] > 1, f'top_ys.shape[0] should greater than 1!'
+        assert thickness_ys.shape[0] > 1, f'thickness_ys.shape[0] should greater than 1!'
+        assert stream_ys.shape[0] > 1, f'stream_ys.shape[0] should greater than 1!'
         assert bottom_ys.shape[0] == top_ys.shape[0], f'error: bottom_ys.shape[0] != top_ys.shape[0]'
 
         self.dirty = False
 
         # expand top_ys to top_xyzs
         top_xs = torch.zeros(top_ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)
-        top_zs = torch.zeros(top_ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)
+        top_zs = stream_ys.clone()
+        top_zs.requires_grad = False
         top_xyzs = torch.cat(
             (top_xs.unsqueeze(1), 
              top_ys.unsqueeze(1), 
              top_zs.unsqueeze(1)), 1)
         # expand bottom_ys to bottom_xyzs (negative)
         bottom_xs = torch.zeros(bottom_ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)
-        bottom_zs = torch.zeros(bottom_ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)
+        bottom_zs = stream_ys.clone()
+        bottom_zs.requires_grad = False
         bottom_xyzs = torch.cat(
             (bottom_xs.unsqueeze(1), 
              -bottom_ys.unsqueeze(1), 
@@ -306,6 +342,8 @@ class FishBodyMesh:
             top_pos = root + top_xyzs[idx]
             bottom_pos = root + bottom_xyzs[idx]
             new_vertices = ian_utils.torch_linspace(bottom_pos, top_pos, lod_y)
+            for y in range(new_vertices.shape[0]):
+                new_vertices[y][2] *= thickness_ys[y]
             self.vertices = torch.cat((self.vertices, new_vertices), 0)
 
         self.vertices = self.vertices.unsqueeze(0)
@@ -382,7 +420,7 @@ class FishBodyMesh:
         obj_text = codecs.open(json_path, 'r', encoding='utf-8').read()
         json_dict = json.loads(obj_text) #This reads json to list
 
-        if ('uv_reshape_bb' in json_dict['parameters']):
+        if ('uv_reshape_bb' in json_dict['parameters'] and json_dict['parameters']['uv_reshape_bb'] is not None):
             uv_reshape_bb_dict = {'uv':np.array(json_dict['parameters']['uv_reshape_bb']['uv']), 'size':np.array(json_dict['parameters']['uv_reshape_bb']['size'])}
         else:
             uv_reshape_bb_dict = None
@@ -394,6 +432,8 @@ class FishBodyMesh:
                             length_z=np.array(json_dict['parameters']['length_z']),
                             top_spline_json_dict=json_dict['parameters']['top_spline'],
                             bottom_spline_json_dict=json_dict['parameters']['bottom_spline'],
+                            thickness_spline_json_dict=json_dict['parameters']['thickness_spline'],
+                            stream_spline_json_dict=json_dict['parameters']['stream_spline'],
                             uv_reshape_bb=uv_reshape_bb_dict)
         
 

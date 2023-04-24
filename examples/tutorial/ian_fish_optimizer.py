@@ -78,8 +78,6 @@ def train_fish():
     # fin
     fin_dir_lr = 5e-2
     fin_uv_lr = 5e-3
-    fin_start_train_epoch = 0
-    mask_loss_enable_epoch = 150
     fin_uv_bound_weight = 100
 
     # parameters
@@ -114,9 +112,10 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 1
-    hyperparameter['fin_start_train_epoch'] = fin_start_train_epoch
-    hyperparameter['mask_loss_enable_epoch'] = mask_loss_enable_epoch
+    hyperparameter['num_epoch'] = 600
+    hyperparameter['texture_start_train_epoch'] = 0
+    hyperparameter['fin_start_train_epoch'] = 1000000
+    hyperparameter['mask_loss_enable_epoch'] = 150
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
     hyperparameter['lod_y'] = lod_y
@@ -147,15 +146,14 @@ def train_fish():
     hyperparameter['body_root_lr_list'] =    [5e-2, 5e-3,   5e-4,   5e-5,   5e-5]
 
     hyperparameter['fin_lr_epoch_list'] =   [0,     150,    300,    400,    500]
+    ##hyperparameter['fin_lr_epoch_list'] =   [0,     15,    30,    40,    50]
     hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-4,   3e-5,   3e-6]
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
     hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   3e-4,   0,      0]
     hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   5e-2,   4e-3,   4e-3]
 
-    hyperparameter  ['texture_jitter_epoch_list'] =   [0     ]
-    hyperparameter  ['texture_jitter_range_list'] =   [0  ]
-    # hyperparameter  ['texture_jitter_epoch_list'] =   [0,     200,    300,    400]
-    # hyperparameter  ['texture_jitter_range_list'] =   [1e-1,  2e-2,   1e-2,   1e-3]
+    hyperparameter  ['texture_jitter_epoch_list'] =   [0,     200,    300,    400]
+    hyperparameter  ['texture_jitter_range_list'] =   [1e-1,  2e-2,   1e-2,   1e-3]
     
     data['hyperparameter'] = hyperparameter
     data['rendered_path'] = rendered_path_single
@@ -184,17 +182,17 @@ def train_fish():
                                  hyperparameter['texture_lr'],
                                  hyperparameter['scheduler_step_size'],
                                  hyperparameter['scheduler_gamma'])
+    ##fish_texture = None
 
     # init renderer
     renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res), 'bilinear')
     
-    texture_start_train_epoch = 0
 
     ## set pectoral fin
     if ('pectoral_fin' in fish_fin_meshes.keys()):
         fish_fin_meshes['pectoral_fin'].z_scale = 0.2
         fish_fin_meshes['pectoral_fin'].grow_mode = 'double_sided'
-        fish_fin_meshes['pectoral_fin'].wave_angle = torch.tensor(-torch.pi/4, dtype=torch.float, device='cuda', requires_grad=False)
+        fish_fin_meshes['pectoral_fin'].wave_angle = torch.tensor(-torch.pi/3, dtype=torch.float, device='cuda', requires_grad=False)
 
     ##################################### TRAINING #####################################
     loss_history = []
@@ -203,15 +201,19 @@ def train_fish():
 
         
         # print result
-        if (epoch % visualize_epoch_interval == 0 and (epoch >= fin_start_train_epoch or True)):
-            visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, False, fish_texture)
+        if (epoch % visualize_epoch_interval == 0 and (epoch >= hyperparameter['fin_start_train_epoch'] or True)):
+            if (epoch >= hyperparameter['texture_start_train_epoch']):
+                visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, False, fish_texture)
+            else:
+                visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, False, None)
+                
 
         
         # train texture
-        if (epoch >= texture_start_train_epoch):
+        if (epoch >= hyperparameter['texture_start_train_epoch']):
             loss = train_texture(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data, epoch)
         # train body
-        elif (epoch < fin_start_train_epoch):
+        elif (epoch < hyperparameter['fin_start_train_epoch']):
             loss = train_body_mesh(fish_body_mesh, renderer, dummy_texture_map, data, epoch)
         # train fins
         else:
@@ -639,6 +641,9 @@ def export_loss_history(path, loss_history):
 def export_meshes(fish_body_mesh, fish_fin_meshes, path):
     all_meshes = list(fish_fin_meshes.values())
     all_meshes.insert(0, fish_body_mesh)
+
+    # calculate shaped uvs
+    reshape_mesh_uvs(all_meshes)
 
     combined_mesh = ian_utils.combine_meshes(all_meshes)
     filepath = os.path.join(path,'combined_mesh.obj')
