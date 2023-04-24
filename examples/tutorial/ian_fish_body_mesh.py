@@ -211,7 +211,38 @@ class FishBodyMesh:
         right = torch.lerp(bottom_right, top_right, offset_v)
         
         return torch.lerp(left, right, offset_u)
+
+    def get_normals_by_uvs(self, uvs):
+        normal_xyzs = torch.zeros((0, 3), dtype=torch.float, device='cuda',
+                                requires_grad=True)
+        for uv in uvs:
+            new_normal_xyz = self.get_normal_by_uv(uv).unsqueeze(0)
+            normal_xyzs = torch.cat((normal_xyzs, new_normal_xyz), 0)
+        return normal_xyzs
+    
+    def get_normal_by_uv(self, uv):
+        assert self.vertices is not None, f'self.vertices should be set before calling get_normal_by_uv()!'
+        lod_uv = torch.mul(uv, torch.tensor((self.lod_x - 1, self.lod_y - 1), dtype=torch.float, device='cuda', requires_grad=False))
+
+        floor_u = torch.floor(lod_uv[0]).long()
+        ceil_u = torch.ceil(lod_uv[0]).long()
+        offset_u = lod_uv[0] - floor_u
+        floor_v = torch.floor(lod_uv[1]).long()
+        ceil_v = torch.ceil(lod_uv[1]).long()
+        offset_v = lod_uv[1] - floor_v
         
+        bottom_left = self.vertices[0][floor_u * self.lod_y + floor_v] 
+        top_left = self.vertices[0][floor_u * self.lod_y + ceil_v] 
+        bottom_right = self.vertices[0][ceil_u * self.lod_y + floor_v] 
+        top_right = self.vertices[0][ceil_u * self.lod_y + ceil_v] 
+        
+        # select triangle (lower-left or upper-right)
+        if (offset_u + offset_v < 1):
+            normal = torch.cross(bottom_right - bottom_left, top_left - bottom_left)
+        else:
+            normal = torch.cross(top_left - top_right, bottom_right - top_right)
+
+        return normal
 
     def get_face_uvs(self):
         if (self.reshaped_face_uvs is None):
