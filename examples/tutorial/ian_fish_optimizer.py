@@ -114,7 +114,7 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 100
+    hyperparameter['num_epoch'] = 600
     hyperparameter['fin_start_train_epoch'] = fin_start_train_epoch
     hyperparameter['mask_loss_enable_epoch'] = mask_loss_enable_epoch
     hyperparameter['key_size'] = key_size
@@ -151,6 +151,11 @@ def train_fish():
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
     hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   3e-4,   0,      0]
     hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   5e-2,   4e-3,   4e-3]
+
+    hyperparameter  ['texture_jitter_epoch_list'] =   [0     ]
+    hyperparameter  ['texture_jitter_range_list'] =   [0  ]
+    # hyperparameter  ['texture_jitter_epoch_list'] =   [0,     200,    300,    400]
+    # hyperparameter  ['texture_jitter_range_list'] =   [1e-1,  2e-2,   1e-2,   1e-3]
     
     data['hyperparameter'] = hyperparameter
     data['rendered_path'] = rendered_path_single
@@ -276,8 +281,13 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
     all_meshes.insert(0, fish_body_mesh)
     reshape_mesh_uvs(all_meshes)
 
+
     # jitter the camera to reduce unsampled texture pixels
-    jitter_offset = torch.tensor((random.normal(0, 0.001), random.normal(0, 0.001), random.normal(0, 0)), dtype=torch.float, device='cuda', requires_grad=False)
+    jitter_offset_range = 0
+    for idx, lr_epoch in enumerate(data['hyperparameter']['texture_jitter_epoch_list']):
+        if (epoch >= lr_epoch):
+            jitter_offset_range = data['hyperparameter']['texture_jitter_range_list'][idx]
+    jitter_offset = torch.tensor((random.normal(0, jitter_offset_range), random.normal(0, jitter_offset_range), random.normal(0, 0)), dtype=torch.float, device='cuda', requires_grad=False)
 
     # render mesh
     loss = 0
