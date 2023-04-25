@@ -291,12 +291,45 @@ class FishFinMesh:
         self.reshaped_face_uvs = kal.ops.mesh.index_vertices_by_faces(self.reshaped_uvs, self.face_uvs_idx).detach()
         self.reshaped_face_uvs.requires_grad = False
 
-    def update_mesh(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, lod_x, lod_y):
+    def calculate_root_thickness_uvs(self, root_uvs: torch.Tensor, thickness_spline:ian_cubic_spline_optimizer.CubicSplineOptimizer) -> torch.Tensor: 
+        lod_x = root_uvs.shape[0]
+        # rotate root_dir 90 degree anti-clockwise
+        root_dir = normalize(root_uvs[root_uvs.shape[0]] - root_uvs[0], p=2.0, dim=0)
+        left_thickness_dir_x = -root_dir[1]
+        left_thickness_dir_y = root_dir[0]
+        left_thickness_dir = torch.stack((left_thickness_dir_x, left_thickness_dir_y), -1)
+        # apply thickness
+        thickness_ys = thickness_spline.calculate_ys_with_lod_x(lod_x)
+        left_uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda', requires_grad=True)
+        right_uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda', requires_grad=True)
+        for d in range(lod_x):
+            left_uv = root_uvs[d] + left_thickness_dir * thickness_ys[d]
+            right_uv = root_uvs[d] - left_thickness_dir * thickness_ys[d]
+            left_uvs = torch.cat((left_uvs, left_uv.unsqueeze(0)), -1)
+            right_uvs = torch.cat((right_uvs, right_uv.unsqueeze(0)), -1)
+
+        return (left_uvs, right_uvs)
+
+    def update_mesh(self, body_mesh: ian_fish_body_mesh.FishBodyMesh, lod_x, lod_y, gen_left_surface = False, gen_right_surface = False):
+        # clamp uvs
         clamped_start_uv = torch.clamp(self.start_uv, 0, 1)
         clamped_end_uv = torch.clamp(self.end_uv, 0, 1)
+        # prepare root uvs and its location
         root_uvs = ian_utils.torch_linspace(clamped_start_uv, clamped_end_uv, lod_x)
         root_xyzs = body_mesh.get_positions_by_uvs(root_uvs)
-        
+        # prepare thickness uvs and its location
+        if (gen_left_surface or gen_right_surface):
+            (root_left_uvs, root_right_uvs) = self.calculate_root_thickness_uvs(root_uvs, self.thickness_spline)
+
+        root_left_xyzs = None
+        if (gen_left_surface):
+            root_left_xyzs = body_mesh.get_positions_by_uvs(root_left_uvs)
+            
+        root_right_xyzs = None
+        if (gen_right_surface):
+            root_right_xyzs = body_mesh.get_positions_by_uvs(root_right_uvs)
+
+        # prepare body normals
         normal_xyzs = ian_utils.torch_linspace(body_mesh.get_normal_by_uv(clamped_start_uv), body_mesh.get_normal_by_uv(clamped_end_uv), lod_x)
         ##normal_xyzs = body_mesh.get_normals_by_uvs(root_uvs)
 
@@ -304,26 +337,15 @@ class FishFinMesh:
             root_xyzs, 
             normal_xyzs,
             self.sil_spline_optimizer.calculate_ys_with_lod_x(lod_x),
+            root_left_xyzs, root_right_xyzs,
             lod_y)
 
-    # https://stackoverflow.com/questions/6802577/rotation-of-3d-vector
-    def rotate_vector3_along_axis(self, v3:torch.Tensor, axis, theta):
-        print(f'rotate_vector3_along_axis: v3 = {v3}')
-        print(f'rotate_vector3_along_axis: axis = {axis}')
-
-        eye = torch.eye(3, dtype=v3.dtype, device=v3.device, requires_grad=False)
-        ##M = torch.matrix_exp(torch.cross(eye, axis/normalize(axis, p=2.0, dim=0)*theta))
-        M = torch.matrix_exp(torch.cross(eye, normalize(axis, p=2.0, dim=0)*theta))
-        return torch.matmul(M, v3)
-
-
-    def set_mesh_by_samples(self, root_xyzs: torch.Tensor, normal_xyzs: torch.Tensor, ys: torch.Tensor, lod_y):
+    def set_mesh_by_samples(self, root_xyzs: torch.Tensor, normal_xyzs: torch.Tensor, ys: torch.Tensor, root_left_xyzs, root_right_xyzs, lod_y):
         assert lod_y > 1, f'lod_y should greater than 1!'
         assert root_xyzs.shape[0] > 1, f'root_xyzs.shape[0] should greater than 1!'
         assert ys.shape[0] > 1, f'ys.shape[0] should greater than 1!'
         
         # calculate root_dirs (by root_xyzs direction).rotate(90 degree)
-        # TODO: the "dx" could be smaller to increase precision
         # TODO: consider all root_xyzs are at the same position...
         # TODO: normal_xyzs is not normalized
         root_dir = root_xyzs[root_xyzs.shape[0]-1] - root_xyzs[0]
@@ -367,40 +389,86 @@ class FishFinMesh:
             rotated_grow_xyzs = self.rotate_grow_xyzs(grow_dirs)
 
 
-        # vertices
+        # reset vertices, faces and uvs
         self.vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda',
                                 requires_grad=True)
-        # for each column
-        for idx, root in enumerate(root_xyzs):
-            new_vertices = ian_utils.torch_linspace(root, root + rotated_grow_xyzs[idx], lod_y)
-            self.vertices = torch.cat((self.vertices, new_vertices), 0)
+        self.faces = torch.zeros((0, 3), dtype=torch.long, device='cuda',
+                                requires_grad=False)
+        self.uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda',
+                                requires_grad=False)
+
+        # surface generation and cat (faces are offested by vertices size)
+        if (root_left_xyzs is not None):
+            print('\n\nroot_left_xyzs\n\n')
+            (left_vertices, left_faces, left_uvs) = self.generate_surface(root_left_xyzs, root_xyzs + rotated_grow_xyzs, lod_y, flip_triangle=True)
+            self.faces = torch.cat((self.faces, left_faces + self.vertices.shape[0]), 0)
+            self.vertices = torch.cat((self.vertices, left_vertices), 0)
+            self.uvs = torch.cat((self.uvs, left_uvs), 0)
+
+        if (root_right_xyzs is not None):
+            print('\n\nroot_right_xyzs\n\n')
+            (right_vertices, right_faces, right_uvs) = self.generate_surface(root_right_xyzs, root_xyzs + rotated_grow_xyzs, lod_y)
+            self.faces = torch.cat((self.faces, right_faces + self.vertices.shape[0]), 0)
+            self.vertices = torch.cat((self.vertices, right_vertices), 0)
+            self.uvs = torch.cat((self.uvs, right_uvs), 0)
+
+        if ((root_left_xyzs is None) and (root_right_xyzs is None)):
+            (mid_vertices, mid_faces, mid_uvs) = self.generate_surface(root_xyzs, root_xyzs + rotated_grow_xyzs, lod_y)
+            # print(f'\n\n')
+            # print(f'before:')
+            # print(f'mid_vertices.shape = {mid_vertices.shape}')
+            # print(f'mid_faces.shape = {mid_faces.shape}')
+            # print(f'mid_uvs.shape = {mid_uvs.shape}')
+            # print(f'self.vertices.shape = {self.vertices.shape}')
+            # print(f'self.faces.shape = {self.faces.shape}')
+            # print(f'self.uvs.shape = {self.uvs.shape}')
+            self.faces = torch.cat((self.faces, mid_faces + self.vertices.shape[0]), 0)
+            self.vertices = torch.cat((self.vertices, mid_vertices), 0)
+            self.uvs = torch.cat((self.uvs, mid_uvs), 0)
+            # print(f'fater:')
+            # print(f'self.vertices.shape = {self.vertices.shape}')
+            # print(f'self.faces.shape = {self.faces.shape}')
+            # print(f'self.uvs.shape = {self.uvs.shape}')
+            # print(f'\n\n')
+
+
+        # self.vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda',
+        #                         requires_grad=True)
+        # # for each column
+        # for idx, root in enumerate(root_xyzs):
+        #     if (root_left_xyzs is not None):
+        #         # TODO: ...
+        #         new_vertices = ian_utils.torch_linspace(root, root + rotated_grow_xyzs[idx], lod_y)
+        #     else:
+        #         new_vertices = ian_utils.torch_linspace(root, root + rotated_grow_xyzs[idx], lod_y)
+        #     self.vertices = torch.cat((self.vertices, new_vertices), 0)
 
         self.vertices = self.vertices.unsqueeze(0)
 
-        # faces
-        self.faces = torch.zeros(((lod_y - 1) * (root_xyzs.shape[0] - 1) * 2, 3), dtype=torch.long, device='cuda',
-                                requires_grad=False)
-        # set the first quad (2 triangles)
-        self.faces[0] = torch.Tensor([0, lod_y, 1])
-        self.faces[1] = torch.Tensor([1, lod_y, lod_y+1])
-        # set all faces
-        for tri_idx in range(2, self.faces.shape[0], 2):
-            self.faces[tri_idx] = self.faces[tri_idx - 2] + 1
-            self.faces[tri_idx + 1] = self.faces[tri_idx - 1] + 1
-            if ((tri_idx / 2) % (lod_y - 1) == 0):
-                self.faces[tri_idx] = self.faces[tri_idx] + 1
-                self.faces[tri_idx + 1] = self.faces[tri_idx + 1] + 1
+        # # faces
+        # self.faces = torch.zeros(((lod_y - 1) * (root_xyzs.shape[0] - 1) * 2, 3), dtype=torch.long, device='cuda',
+        #                         requires_grad=False)
+        # # set the first quad (2 triangles)
+        # self.faces[0] = torch.Tensor([0, lod_y, 1])
+        # self.faces[1] = torch.Tensor([1, lod_y, lod_y+1])
+        # # set all faces
+        # for tri_idx in range(2, self.faces.shape[0], 2):
+        #     self.faces[tri_idx] = self.faces[tri_idx - 2] + 1
+        #     self.faces[tri_idx + 1] = self.faces[tri_idx - 1] + 1
+        #     if ((tri_idx / 2) % (lod_y - 1) == 0):
+        #         self.faces[tri_idx] = self.faces[tri_idx] + 1
+        #         self.faces[tri_idx + 1] = self.faces[tri_idx + 1] + 1
 
-        # uvs
-        self.uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda',
-                                requires_grad=False)
-        # for each column
-        for idx, root in enumerate(root_xyzs):
-            column_u = float(idx) / float(root_xyzs.shape[0]-1)
-            top_uv = torch.Tensor([column_u, 1.0])
-            bottom_uv = torch.Tensor([column_u, 0.0])
-            new_uvs = ian_utils.torch_linspace(bottom_uv, top_uv, lod_y).cuda()
-            self.uvs = torch.cat((self.uvs, new_uvs), 0)
+        # # uvs
+        # self.uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda',
+        #                         requires_grad=False)
+        # # for each column
+        # for idx, root in enumerate(root_xyzs):
+        #     column_u = float(idx) / float(root_xyzs.shape[0]-1)
+        #     top_uv = torch.Tensor([column_u, 1.0])
+        #     bottom_uv = torch.Tensor([column_u, 0.0])
+        #     new_uvs = ian_utils.torch_linspace(bottom_uv, top_uv, lod_y).cuda()
+        #     self.uvs = torch.cat((self.uvs, new_uvs), 0)
         self.uvs = self.uvs.cuda().unsqueeze(0)
 
         # face_uvs_idx
@@ -410,7 +478,55 @@ class FishFinMesh:
         # face_uvs
         self.face_uvs = kal.ops.mesh.index_vertices_by_faces(self.uvs, self.face_uvs_idx).detach()
         self.face_uvs.requires_grad = False
+
+        # PRITN everything
+        # print(f'self.vertices.shape = {self.vertices.shape}')
+        # print(f'self.faces.shape = {self.faces.shape}')
+        # print(f'self.uvs.shape = {self.uvs.shape}')
+        # print(f'self.face_uvs_idx.shape = {self.face_uvs_idx.shape}')
+        # print(f'self.face_uvs.shape = {self.face_uvs.shape}')
     
+    def generate_surface(self, root_xyzs, top_xyzs, lod_y, flip_triangle = False):
+        # vertices
+        vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda', 
+                               requires_grad=True)
+        # for each column
+        for idx, root in enumerate(root_xyzs):
+            new_vertices = ian_utils.torch_linspace(root, top_xyzs[idx], lod_y)
+            vertices = torch.cat((vertices, new_vertices), 0)
+        ###vertices = self.vertices.unsqueeze(0)
+
+        # faces
+        faces = torch.zeros(((lod_y - 1) * (root_xyzs.shape[0] - 1) * 2, 3), dtype=torch.long, device='cuda',
+                            requires_grad=False)
+        # set the first quad (2 triangles)
+        if (flip_triangle):
+            faces[0] = torch.Tensor([0, 1, lod_y])
+            faces[1] = torch.Tensor([1, lod_y+1, lod_y])
+        else:
+            faces[0] = torch.Tensor([0, lod_y, 1])
+            faces[1] = torch.Tensor([1, lod_y, lod_y+1])
+        # set all faces
+        for tri_idx in range(2, faces.shape[0], 2):
+            faces[tri_idx] = faces[tri_idx - 2] + 1
+            faces[tri_idx + 1] = faces[tri_idx - 1] + 1
+            if ((tri_idx / 2) % (lod_y - 1) == 0):
+                faces[tri_idx] = faces[tri_idx] + 1
+                faces[tri_idx + 1] = faces[tri_idx + 1] + 1
+
+        # uvs
+        uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda',
+                                requires_grad=False)
+        # for each column
+        for idx, root in enumerate(root_xyzs):
+            column_u = float(idx) / float(root_xyzs.shape[0]-1)
+            top_uv = torch.Tensor([column_u, 1.0])
+            bottom_uv = torch.Tensor([column_u, 0.0])
+            new_uvs = ian_utils.torch_linspace(bottom_uv, top_uv, lod_y).cuda()
+            uvs = torch.cat((uvs, new_uvs), 0)
+
+        return (vertices, faces, uvs)
+
     # NOTICE this is only for side fins. Use rotate_grow_xyzs_along_axis() for real rotation
     def rotate_grow_xyzs(self, grow_xyzs: torch.Tensor):
         rotated_grow_xyzs = torch.zeros((0, 3), dtype=grow_xyzs.dtype, device=grow_xyzs.device,
