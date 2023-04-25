@@ -90,6 +90,37 @@
                 "scheduler_step_size": 10,
                 "scheduler_gamma": 0.99
             }
+        },
+        "thickness_spline": {
+            "parameters": {
+                "key_xs": [
+                    0.0,
+                    0.3,
+                    0.5,
+                    0.7,
+                    1.0
+                ],
+                "key_ys": [
+                    0.0,
+                    0.01,
+                    0.013,
+                    0.01,
+                    0.0
+                ],
+                "key_ts": [
+                    0.01,
+                    0.002,
+                    0.0,
+                    -0.002,
+                    -0.01
+                ]
+            },
+            "optimizer_parameters": {
+                "y_lr": 0.05,
+                "t_lr": 0.05,
+                "scheduler_step_size": 10,
+                "scheduler_gamma": 0.99
+            }
         }
     },
     "optimizer_parameters": {

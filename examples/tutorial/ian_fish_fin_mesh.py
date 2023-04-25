@@ -45,6 +45,9 @@ class FishFinMesh:
                  init_height = 0.2
                  ):
         
+        self.grow_mode = 'single_sided'
+        self.wave_angle = torch.tensor(-torch.pi/3, dtype=torch.float, device='cuda', requires_grad=False)
+
         self.key_size = key_size
 
         self.scheduler_step_size = scheduler_step_size
@@ -105,6 +108,8 @@ class FishFinMesh:
             gamma=scheduler_gamma)
         
         self.parameters = {}
+        self.parameters['grow_mode'] = self.grow_mode
+        self.parameters['wave_angle'] = self.wave_angle
         self.parameters['start_uv'] = self.start_uv
         self.parameters['end_uv'] = self.end_uv
         self.parameters['start_dir'] = self.start_dir
@@ -122,6 +127,8 @@ class FishFinMesh:
 
     
     def set_parameters(self, 
+                       grow_mode,
+                       wave_angle,
                        start_uv, end_uv,
                        start_dir, end_dir,
                        init_height,
@@ -139,7 +146,16 @@ class FishFinMesh:
             scheduler_gamma=0,
             init_key_ys=0.0
         )
-        
+        # set grow_mode
+        if (grow_mode is None):
+            self.grow_mode = 'single_sided'
+        else:
+            self.grow_mode = grow_mode
+        # set wave_angle
+        if (wave_angle is None):
+            self.wave_angle = torch.tensor(-torch.pi/3, dtype=torch.float, device='cuda', requires_grad=False)
+        else:
+            self.wave_angle = torch.tensor(wave_angle, dtype=torch.float, device='cuda', requires_grad=False)
         
         self.sil_spline_optimizer.load_from_json_dict(sil_spline_json_dict)
         if (thickness_spline_json_dict is not None):
@@ -153,6 +169,8 @@ class FishFinMesh:
         self.end_dir = torch.tensor((end_dir), dtype=torch.float, device='cuda', requires_grad=True)
 
         self.parameters = {}
+        self.parameters['grow_mode'] = self.grow_mode
+        self.parameters['wave_angle'] = self.wave_angle
         self.parameters['start_uv'] = self.start_uv
         self.parameters['end_uv'] = self.end_uv
         self.parameters['start_dir'] = self.start_dir
@@ -202,7 +220,9 @@ class FishFinMesh:
         self.optimizer_parameters['scheduler_gamma'] = self.scheduler_gamma
 
     def reset_dir(self, start_dir, end_dir):
-        self.set_parameters(self.parameters['start_uv'], self.parameters['end_uv'], 
+        self.set_parameters(self.grow_mode,
+                            self.wave_angle,
+                            self.parameters['start_uv'], self.parameters['end_uv'], 
                             start_dir, end_dir, 
                             self.parameters['init_height'],
                             ian_utils.convert_tensor_dict(self.parameters['sil_spline'].copy()),
@@ -347,7 +367,7 @@ class FishFinMesh:
             (root_left_uvs, root_right_uvs) = self.calculate_root_thickness_uvs(root_uvs)
 
         root_left_xyzs = None
-        if (gen_left_surface):
+        if (gen_left_surface and self.grow_mode == 'double_sided'):
             root_left_xyzs = body_mesh.get_positions_by_uvs(root_left_uvs)
             
         root_right_xyzs = None
@@ -374,12 +394,12 @@ class FishFinMesh:
         # TODO: consider all root_xyzs are at the same position...
         # TODO: normal_xyzs is not normalized
         root_dir = root_xyzs[root_xyzs.shape[0]-1] - root_xyzs[0]
-        grow_dirs = (root_xyzs[1] - root_xyzs[0]).unsqueeze(0)
-        for idx in range(1, root_xyzs.shape[0]):
+        grow_dirs = torch.zeros((0, 3), dtype=torch.float, device='cuda',
+                                requires_grad=True)
+        
+        for idx in range(0, root_xyzs.shape[0]):
 
-            if (hasattr(self, 'grow_mode') and 
-                (self.grow_mode == 'double_sided') and
-                hasattr(self, 'wave_angle')):
+            if (self.grow_mode == 'double_sided'):
                 # apply rotate_dir and wave_angle
                 grow_dir = normalize(normal_xyzs[idx], p=2.0, dim=0) * ys[idx]
                 side_dir = torch.cross(root_dir, normal_xyzs[idx])
@@ -405,9 +425,7 @@ class FishFinMesh:
             # print(f'after: grow_dir = {rotated_grow_dir}')
             # print("")
 
-        if (hasattr(self, 'grow_mode') and 
-            (self.grow_mode == 'double_sided') and
-            hasattr(self, 'wave_angle')):
+        if (self.grow_mode == 'double_sided'):
             rotated_grow_xyzs = grow_dirs
         else:
             # rotate grow_xyzs by lerped start_dir and end_dir
@@ -424,14 +442,12 @@ class FishFinMesh:
 
         # surface generation and cat (faces are offested by vertices size)
         if (root_left_xyzs is not None):
-            print('\n\nroot_left_xyzs\n\n')
             (left_vertices, left_faces, left_uvs) = self.generate_surface(root_left_xyzs, root_xyzs + rotated_grow_xyzs, lod_y, flip_triangle=True)
             self.faces = torch.cat((self.faces, left_faces + self.vertices.shape[0]), 0)
             self.vertices = torch.cat((self.vertices, left_vertices), 0)
             self.uvs = torch.cat((self.uvs, left_uvs), 0)
 
         if (root_right_xyzs is not None):
-            print('\n\nroot_right_xyzs\n\n')
             (right_vertices, right_faces, right_uvs) = self.generate_surface(root_right_xyzs, root_xyzs + rotated_grow_xyzs, lod_y)
             self.faces = torch.cat((self.faces, right_faces + self.vertices.shape[0]), 0)
             self.vertices = torch.cat((self.vertices, right_vertices), 0)
@@ -605,17 +621,26 @@ class FishFinMesh:
         obj_text = codecs.open(json_path, 'r', encoding='utf-8').read()
         json_dict = json.loads(obj_text) #This reads json to list
 
+        # uv_reshape_bb
+        uv_reshape_bb_dict = None
         if ('uv_reshape_bb' in json_dict['parameters'] and json_dict['parameters']['uv_reshape_bb'] is not None):
             uv_reshape_bb_dict = {'uv':np.array(json_dict['parameters']['uv_reshape_bb']['uv']), 'size':np.array(json_dict['parameters']['uv_reshape_bb']['size'])}
-        else:
-            uv_reshape_bb_dict = None
-
+        # thickness_spline
+        thickness_spline_json_dict = None
         if ('thickness_spline' in json_dict['parameters']):
             thickness_spline_json_dict = json_dict['parameters']['thickness_spline']
-        else:
-            thickness_spline_json_dict = None
+        # grow_mode
+        grow_mode = None
+        if ('grow_mode' in json_dict['parameters']):
+            grow_mode = json_dict['parameters']['grow_mode']
+        # grow_mode
+        wave_angle = None
+        if ('wave_angle' in json_dict['parameters']):
+            wave_angle = json_dict['parameters']['wave_angle']
 
-        self.set_parameters(start_uv=np.array(json_dict['parameters']['start_uv']),
+        self.set_parameters(grow_mode=grow_mode,
+                            wave_angle=wave_angle,
+                            start_uv=np.array(json_dict['parameters']['start_uv']),
                             end_uv=np.array(json_dict['parameters']['end_uv']),
                             start_dir=np.array(json_dict['parameters']['start_dir']),
                             end_dir=np.array(json_dict['parameters']['end_dir']),
