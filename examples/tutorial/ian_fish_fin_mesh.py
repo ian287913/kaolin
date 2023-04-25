@@ -455,61 +455,12 @@ class FishFinMesh:
 
         if ((root_left_xyzs is None) and (root_right_xyzs is None)):
             (mid_vertices, mid_faces, mid_uvs) = self.generate_surface(root_xyzs, root_xyzs + rotated_grow_xyzs, lod_y)
-            # print(f'\n\n')
-            # print(f'before:')
-            # print(f'mid_vertices.shape = {mid_vertices.shape}')
-            # print(f'mid_faces.shape = {mid_faces.shape}')
-            # print(f'mid_uvs.shape = {mid_uvs.shape}')
-            # print(f'self.vertices.shape = {self.vertices.shape}')
-            # print(f'self.faces.shape = {self.faces.shape}')
-            # print(f'self.uvs.shape = {self.uvs.shape}')
             self.faces = torch.cat((self.faces, mid_faces + self.vertices.shape[0]), 0)
             self.vertices = torch.cat((self.vertices, mid_vertices), 0)
             self.uvs = torch.cat((self.uvs, mid_uvs), 0)
-            # print(f'fater:')
-            # print(f'self.vertices.shape = {self.vertices.shape}')
-            # print(f'self.faces.shape = {self.faces.shape}')
-            # print(f'self.uvs.shape = {self.uvs.shape}')
-            # print(f'\n\n')
-
-
-        # self.vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda',
-        #                         requires_grad=True)
-        # # for each column
-        # for idx, root in enumerate(root_xyzs):
-        #     if (root_left_xyzs is not None):
-        #         # TODO: ...
-        #         new_vertices = ian_utils.torch_linspace(root, root + rotated_grow_xyzs[idx], lod_y)
-        #     else:
-        #         new_vertices = ian_utils.torch_linspace(root, root + rotated_grow_xyzs[idx], lod_y)
-        #     self.vertices = torch.cat((self.vertices, new_vertices), 0)
 
         self.vertices = self.vertices.unsqueeze(0)
 
-        # # faces
-        # self.faces = torch.zeros(((lod_y - 1) * (root_xyzs.shape[0] - 1) * 2, 3), dtype=torch.long, device='cuda',
-        #                         requires_grad=False)
-        # # set the first quad (2 triangles)
-        # self.faces[0] = torch.Tensor([0, lod_y, 1])
-        # self.faces[1] = torch.Tensor([1, lod_y, lod_y+1])
-        # # set all faces
-        # for tri_idx in range(2, self.faces.shape[0], 2):
-        #     self.faces[tri_idx] = self.faces[tri_idx - 2] + 1
-        #     self.faces[tri_idx + 1] = self.faces[tri_idx - 1] + 1
-        #     if ((tri_idx / 2) % (lod_y - 1) == 0):
-        #         self.faces[tri_idx] = self.faces[tri_idx] + 1
-        #         self.faces[tri_idx + 1] = self.faces[tri_idx + 1] + 1
-
-        # # uvs
-        # self.uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda',
-        #                         requires_grad=False)
-        # # for each column
-        # for idx, root in enumerate(root_xyzs):
-        #     column_u = float(idx) / float(root_xyzs.shape[0]-1)
-        #     top_uv = torch.Tensor([column_u, 1.0])
-        #     bottom_uv = torch.Tensor([column_u, 0.0])
-        #     new_uvs = ian_utils.torch_linspace(bottom_uv, top_uv, lod_y).cuda()
-        #     self.uvs = torch.cat((self.uvs, new_uvs), 0)
         self.uvs = self.uvs.cuda().unsqueeze(0)
 
         # face_uvs_idx
@@ -520,12 +471,6 @@ class FishFinMesh:
         self.face_uvs = kal.ops.mesh.index_vertices_by_faces(self.uvs, self.face_uvs_idx).detach()
         self.face_uvs.requires_grad = False
 
-        # PRITN everything
-        # print(f'self.vertices.shape = {self.vertices.shape}')
-        # print(f'self.faces.shape = {self.faces.shape}')
-        # print(f'self.uvs.shape = {self.uvs.shape}')
-        # print(f'self.face_uvs_idx.shape = {self.face_uvs_idx.shape}')
-        # print(f'self.face_uvs.shape = {self.face_uvs.shape}')
     
     def generate_surface(self, root_xyzs, top_xyzs, lod_y, flip_triangle = False):
         # vertices
