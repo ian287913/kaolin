@@ -112,9 +112,9 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 1
-    hyperparameter['texture_start_train_epoch'] = 0
-    hyperparameter['fin_start_train_epoch'] = 1000000
+    hyperparameter['num_epoch'] = 650
+    hyperparameter['texture_start_train_epoch'] = 1000000
+    hyperparameter['fin_start_train_epoch'] = 0
     hyperparameter['mask_loss_enable_epoch'] = 150
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
@@ -149,8 +149,8 @@ def train_fish():
     ##hyperparameter['fin_lr_epoch_list'] =   [0,     15,    30,    40,    50]
     hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-4,   3e-5,   3e-6]
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
-    hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   3e-4,   0,      0]
-    hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   5e-2,   4e-3,   4e-3]
+    hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   1e-4,   0,      0]
+    hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   1e-4,   1e-4,   1e-5]
 
     hyperparameter  ['texture_jitter_epoch_list'] =   [0,     200,    300,    400]
     hyperparameter  ['texture_jitter_range_list'] =   [1e-1,  2e-2,   1e-2,   1e-3]
@@ -192,12 +192,14 @@ def train_fish():
     if ('pectoral_fin' in fish_fin_meshes.keys()):
         fish_fin_meshes['pectoral_fin'].grow_mode = 'double_sided'
         fish_fin_meshes['pectoral_fin'].wave_angle = torch.tensor(-torch.pi/3, dtype=torch.float, device='cuda', requires_grad=False)
+    if ('pelvic_fin' in fish_fin_meshes.keys()):
+        fish_fin_meshes['pelvic_fin'].grow_mode = 'double_sided'
+        fish_fin_meshes['pelvic_fin'].wave_angle = torch.tensor(-torch.pi/3.5, dtype=torch.float, device='cuda', requires_grad=False)
 
     ##################################### TRAINING #####################################
     loss_history = []
     epoch = 0
     for epoch in range(hyperparameter['num_epoch']):
-
         
         # print result
         if (epoch % visualize_epoch_interval == 0 and (epoch >= hyperparameter['fin_start_train_epoch'] or True)):
@@ -206,7 +208,6 @@ def train_fish():
             else:
                 visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, False, None)
                 
-
         
         # train texture
         if (epoch >= hyperparameter['texture_start_train_epoch']):
@@ -417,9 +418,9 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     root_pos_weight = data['hyperparameter']['root_pos_weight']
 
     # try to expand fin dir
-    if (epoch == 300 or epoch == 350):
+    if (epoch == 300000 or epoch == 10000000):
         for fin_name in data['hyperparameter']['fin_list']:
-            fish_fin_mesh.reset_dir(fish_fin_mesh.start_dir + 0.1, fish_fin_mesh.end_dir - 0.1)
+            fish_fin_mesh.reset_dir(fish_fin_mesh.start_dir + 0.15, fish_fin_mesh.end_dir - 0.15)
 
     # set lr according to epoch
     t_lr = 0
