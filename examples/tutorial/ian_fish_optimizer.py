@@ -112,7 +112,7 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 600
+    hyperparameter['num_epoch'] = 1
     hyperparameter['texture_start_train_epoch'] = 0
     hyperparameter['fin_start_train_epoch'] = 1000000
     hyperparameter['mask_loss_enable_epoch'] = 150
@@ -539,7 +539,7 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
             if (fin_name in fish_fin_meshes):
                 fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh = fish_fin_meshes[fin_name]
                 # render mesh
-                fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+                fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y,gen_left_surface=False, gen_right_surface=True)
                 rendered_fin_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
                     elev = data['metadata']['cam_elev'], 
                     azim = data['metadata']['cam_azim'], 

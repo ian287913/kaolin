@@ -66,6 +66,14 @@ class FishFinMesh:
             scheduler_gamma=scheduler_gamma,
             init_key_ys=init_height)
         
+        self.thickness_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
+            key_size,  
+            y_lr=y_lr, 
+            t_lr=t_lr, 
+            scheduler_step_size=scheduler_step_size, 
+            scheduler_gamma=scheduler_gamma,
+            init_key_ys=0.0)
+        
         # initialize leaves
         self.start_uv = torch.tensor(start_uv, dtype=torch.float, device='cuda', requires_grad=True)
         self.end_uv = torch.tensor(end_uv, dtype=torch.float, device='cuda', requires_grad=True)
@@ -103,6 +111,7 @@ class FishFinMesh:
         self.parameters['end_dir'] = self.end_dir
         self.parameters['init_height'] = init_height
         self.parameters['sil_spline'] = self.sil_spline_optimizer.get_json_dict()
+        self.parameters['thickness_spline'] = self.thickness_spline_optimizer.get_json_dict()
         self.parameters['uv_reshape_bb'] = {}
 
         self.optimizer_parameters = {}
@@ -117,12 +126,24 @@ class FishFinMesh:
                        start_dir, end_dir,
                        init_height,
                        sil_spline_json_dict,
+                       thickness_spline_json_dict,
                        uv_reshape_bb):
 
         # init top curve and bottom curve
         self.sil_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer()
+        self.thickness_spline_optimizer = ian_cubic_spline_optimizer.CubicSplineOptimizer(
+            2,  
+            y_lr=0, 
+            t_lr=0, 
+            scheduler_step_size=0, 
+            scheduler_gamma=0,
+            init_key_ys=0.0
+        )
+        
         
         self.sil_spline_optimizer.load_from_json_dict(sil_spline_json_dict)
+        if (thickness_spline_json_dict is not None):
+            self.thickness_spline_optimizer.load_from_json_dict(thickness_spline_json_dict)
         
         # initialize leaves
         self.start_uv = torch.tensor(start_uv, dtype=torch.float, device='cuda', requires_grad=True)
@@ -138,6 +159,7 @@ class FishFinMesh:
         self.parameters['end_dir'] = self.end_dir
         self.parameters['init_height'] = init_height
         self.parameters['sil_spline'] = self.sil_spline_optimizer.get_json_dict()
+        self.parameters['thickness_spline'] = self.thickness_spline_optimizer.get_json_dict()
         self.parameters['uv_reshape_bb'] = uv_reshape_bb
 
 
@@ -184,6 +206,7 @@ class FishFinMesh:
                             start_dir, end_dir, 
                             self.parameters['init_height'],
                             ian_utils.convert_tensor_dict(self.parameters['sil_spline'].copy()),
+                            ian_utils.convert_tensor_dict(self.parameters['thickness_spline'].copy()),
                             uv_reshape_bb=self.parameters['uv_reshape_bb'])
         
         self.set_optimizer(self.optimizer_parameters['scheduler_step_size'], self.optimizer_parameters['scheduler_gamma'],
@@ -229,6 +252,7 @@ class FishFinMesh:
 
     def zero_grad(self):
         self.sil_spline_optimizer.zero_grad()
+        ##self.thickness_spline_optimizer.zero_grad()
 
         self.start_uv_optim.zero_grad()
         self.end_uv_optim.zero_grad()
@@ -238,6 +262,7 @@ class FishFinMesh:
     def step(self, step_splines = True):
         if (step_splines == True):
             self.sil_spline_optimizer.step()
+            ##self.thickness_spline_optimizer.step()
 
         self.start_uv_optim.step()
         self.end_uv_optim.step()
@@ -291,22 +316,22 @@ class FishFinMesh:
         self.reshaped_face_uvs = kal.ops.mesh.index_vertices_by_faces(self.reshaped_uvs, self.face_uvs_idx).detach()
         self.reshaped_face_uvs.requires_grad = False
 
-    def calculate_root_thickness_uvs(self, root_uvs: torch.Tensor, thickness_spline:ian_cubic_spline_optimizer.CubicSplineOptimizer) -> torch.Tensor: 
+    def calculate_root_thickness_uvs(self, root_uvs: torch.Tensor) -> torch.Tensor: 
         lod_x = root_uvs.shape[0]
         # rotate root_dir 90 degree anti-clockwise
-        root_dir = normalize(root_uvs[root_uvs.shape[0]] - root_uvs[0], p=2.0, dim=0)
+        root_dir = normalize(root_uvs[root_uvs.shape[0] - 1] - root_uvs[0], p=2.0, dim=0)
         left_thickness_dir_x = -root_dir[1]
         left_thickness_dir_y = root_dir[0]
         left_thickness_dir = torch.stack((left_thickness_dir_x, left_thickness_dir_y), -1)
         # apply thickness
-        thickness_ys = thickness_spline.calculate_ys_with_lod_x(lod_x)
+        thickness_ys = self.thickness_spline_optimizer.calculate_ys_with_lod_x(lod_x)
         left_uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda', requires_grad=True)
         right_uvs = torch.zeros((0, 2), dtype=torch.float, device='cuda', requires_grad=True)
         for d in range(lod_x):
             left_uv = root_uvs[d] + left_thickness_dir * thickness_ys[d]
             right_uv = root_uvs[d] - left_thickness_dir * thickness_ys[d]
-            left_uvs = torch.cat((left_uvs, left_uv.unsqueeze(0)), -1)
-            right_uvs = torch.cat((right_uvs, right_uv.unsqueeze(0)), -1)
+            left_uvs = torch.cat((left_uvs, left_uv.unsqueeze(0)), 0)
+            right_uvs = torch.cat((right_uvs, right_uv.unsqueeze(0)), 0)
 
         return (left_uvs, right_uvs)
 
@@ -319,7 +344,7 @@ class FishFinMesh:
         root_xyzs = body_mesh.get_positions_by_uvs(root_uvs)
         # prepare thickness uvs and its location
         if (gen_left_surface or gen_right_surface):
-            (root_left_uvs, root_right_uvs) = self.calculate_root_thickness_uvs(root_uvs, self.thickness_spline)
+            (root_left_uvs, root_right_uvs) = self.calculate_root_thickness_uvs(root_uvs)
 
         root_left_xyzs = None
         if (gen_left_surface):
@@ -585,12 +610,18 @@ class FishFinMesh:
         else:
             uv_reshape_bb_dict = None
 
+        if ('thickness_spline' in json_dict['parameters']):
+            thickness_spline_json_dict = json_dict['parameters']['thickness_spline']
+        else:
+            thickness_spline_json_dict = None
+
         self.set_parameters(start_uv=np.array(json_dict['parameters']['start_uv']),
                             end_uv=np.array(json_dict['parameters']['end_uv']),
                             start_dir=np.array(json_dict['parameters']['start_dir']),
                             end_dir=np.array(json_dict['parameters']['end_dir']),
                             init_height=np.array(json_dict['parameters']['init_height']),
                             sil_spline_json_dict=json_dict['parameters']['sil_spline'],
+                            thickness_spline_json_dict=thickness_spline_json_dict,
                             uv_reshape_bb=uv_reshape_bb_dict)
 
         self.set_optimizer(scheduler_step_size=json_dict['optimizer_parameters']['scheduler_step_size'],
