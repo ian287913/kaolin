@@ -257,6 +257,59 @@ def reshape_mesh_uvs(meshes:list):
                 continue
             meshes[idx].reshape_uvs([u * grid_size, v * grid_size, grid_size, grid_size])
 
+def calculate_valid_texture_pixels(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
+                  fish_fin_meshes:dict,
+                  renderer:ian_renderer.Renderer,
+                  fish_texture:ian_fish_texture.FishTexture,
+                  data):
+    lod_x = data['hyperparameter']['lod_x']
+    lod_y = data['hyperparameter']['lod_y']
+    image_weight = data['hyperparameter']['image_weight']
+    
+    # override lr
+    # TODO...
+
+    # reset texture
+    fish_texture.zero_grad()
+
+    # reset mesh
+    if(fish_body_mesh.dirty):
+        with torch.no_grad():
+            fish_body_mesh.update_mesh(lod_x, lod_y)
+            # also update fins
+            for fin_name, fin_mesh in fish_fin_meshes.items():
+                fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+    
+    # reshape uvs
+    all_meshes = list(fish_fin_meshes.values())
+    all_meshes.insert(0, fish_body_mesh)
+    reshape_mesh_uvs(all_meshes)
+
+    # render mesh
+    loss = 0
+    for mesh in all_meshes:
+        rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
+            elev = data['metadata']['cam_elev'], 
+            azim = data['metadata']['cam_azim'], 
+            r = data['metadata']['cam_radius'], 
+            look_at_height = data['metadata']['cam_look_at_height'], 
+            fovyangle = data['metadata']['cam_fovyangle'],
+            mesh = mesh,
+            sigmainv = data['metadata']['sigmainv'],
+            texture_map = fish_texture.texture)
+    
+        ### Image Losses ###
+        image_loss = torch.mean(torch.abs(rendered_image - torch.ones_like(rendered_image, device='cuda', requires_grad=False) * 9999.9))
+        loss += image_loss
+
+    ### Update the parameters ###
+    loss.backward()
+
+    # TODO: get gradient
+    valid_pixels = fish_texture.texture.clone()
+    
+
+
 def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
                   fish_fin_meshes:dict,
                   renderer:ian_renderer.Renderer,
