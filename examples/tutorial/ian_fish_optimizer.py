@@ -320,18 +320,18 @@ def calculate_valid_texture_pixels(fish_body_mesh:ian_fish_body_mesh.FishBodyMes
         
         loss += image_loss
 
-    
-
     ### Update the parameters ###
     loss.backward()
 
-    torch.set_printoptions(profile="full")
-    print(f'dummy_texture.grad = {dummy_texture.grad[0]}')
+    ##torch.set_printoptions(profile="full")
+    ##print(f'dummy_texture.grad = {dummy_texture.grad[0]}')
+    
+    gradient = dummy_texture.grad.clone().cpu()
 
-    valid_pixels = torch.zeros_like(dummy_texture, requires_grad=False)
-    for y in range(0, dummy_texture.shape[2]):
-        for x in range(0, dummy_texture.shape[3]):
-            if (dummy_texture.grad[0, 0, y, x] != 0 or dummy_texture.grad[0, 1, y, x] != 0 or dummy_texture.grad[0, 2, y, x] != 0):
+    valid_pixels = torch.zeros_like(gradient, requires_grad=False)
+    for y in range(0, gradient.shape[2]):
+        for x in range(0, gradient.shape[3]):
+            if (gradient[0, 0, y, x] != 0 or gradient[0, 1, y, x] != 0 or gradient[0, 2, y, x] != 0):
                 valid_pixels[0, :, y, x] = 1
     
     return valid_pixels
