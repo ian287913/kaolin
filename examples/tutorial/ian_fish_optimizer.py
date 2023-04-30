@@ -112,9 +112,9 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 650
-    hyperparameter['texture_start_train_epoch'] = 1000000
-    hyperparameter['fin_start_train_epoch'] = 0
+    hyperparameter['num_epoch'] = 50
+    hyperparameter['texture_start_train_epoch'] = 0
+    hyperparameter['fin_start_train_epoch'] = 10000000
     hyperparameter['mask_loss_enable_epoch'] = 150
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
@@ -152,7 +152,7 @@ def train_fish():
     hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   1e-4,   0,      0]
     hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   1e-4,   1e-4,   1e-5]
 
-    hyperparameter  ['texture_jitter_epoch_list'] =   [0,     200,    300,    400]
+    hyperparameter  ['texture_jitter_epoch_list'] =   [1000,     20000,    30000,    40000]
     hyperparameter  ['texture_jitter_range_list'] =   [1e-1,  2e-2,   1e-2,   1e-3]
     
     data['hyperparameter'] = hyperparameter
@@ -185,7 +185,8 @@ def train_fish():
     ##fish_texture = None
 
     # init renderer
-    renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res), 'bilinear')
+    renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res), 'nearest')
+    ##renderer = ian_renderer.Renderer('cuda', 1, (render_res, render_res), 'bilinear')
     
 
     ## set pectoral fin
@@ -195,6 +196,8 @@ def train_fish():
     if ('pelvic_fin' in fish_fin_meshes.keys()):
         fish_fin_meshes['pelvic_fin'].grow_mode = 'double_sided'
         fish_fin_meshes['pelvic_fin'].wave_angle = torch.tensor(-torch.pi/3.5, dtype=torch.float, device='cuda', requires_grad=False)
+
+    print(f'fish_body_mesh.dirty = {fish_body_mesh.dirty}')
 
     ##################################### TRAINING #####################################
     loss_history = []
@@ -212,6 +215,9 @@ def train_fish():
         # train texture
         if (epoch >= hyperparameter['texture_start_train_epoch']):
             loss = train_texture(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data, epoch)
+            # if (epoch == 1):
+            #     # export valid pixels
+            #     export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
         # train body
         elif (epoch < hyperparameter['fin_start_train_epoch']):
             loss = train_body_mesh(fish_body_mesh, renderer, dummy_texture_map, data, epoch)
@@ -244,6 +250,9 @@ def train_fish():
 
     export_meshes(fish_body_mesh, fish_fin_meshes, data['output_path'])
 
+    export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
+    
+
 # arrange each mesh vu in a NxN grid
 def reshape_mesh_uvs(meshes:list):
     mesh_count = len(meshes)
@@ -262,28 +271,29 @@ def calculate_valid_texture_pixels(fish_body_mesh:ian_fish_body_mesh.FishBodyMes
                   renderer:ian_renderer.Renderer,
                   fish_texture:ian_fish_texture.FishTexture,
                   data):
+    print('calculating valid texture pixels...')
+    
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
-    image_weight = data['hyperparameter']['image_weight']
-    
-    # override lr
-    # TODO...
 
-    # reset texture
-    fish_texture.zero_grad()
+    # create texture
+    dummy_texture = torch.ones((1, 3, fish_texture.texture.shape[2], fish_texture.texture.shape[3]), dtype=torch.float, device='cuda',
+                            requires_grad=True)
 
-    # reset mesh
-    if(fish_body_mesh.dirty):
-        with torch.no_grad():
-            fish_body_mesh.update_mesh(lod_x, lod_y)
-            # also update fins
-            for fin_name, fin_mesh in fish_fin_meshes.items():
-                fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+    # resetting mesh might cause different pixel position...
+    # # reset mesh
+    # if(fish_body_mesh.dirty):
+    #     with torch.no_grad():
+    #         fish_body_mesh.update_mesh(lod_x, lod_y)
+    # with torch.no_grad():
+    #     # also update fins
+    #     for fin_name, fin_mesh in fish_fin_meshes.items():
+    #         fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
     
-    # reshape uvs
     all_meshes = list(fish_fin_meshes.values())
     all_meshes.insert(0, fish_body_mesh)
-    reshape_mesh_uvs(all_meshes)
+    # # reshape uvs
+    # reshape_mesh_uvs(all_meshes)
 
     # render mesh
     loss = 0
@@ -296,18 +306,35 @@ def calculate_valid_texture_pixels(fish_body_mesh:ian_fish_body_mesh.FishBodyMes
             fovyangle = data['metadata']['cam_fovyangle'],
             mesh = mesh,
             sigmainv = data['metadata']['sigmainv'],
-            texture_map = fish_texture.texture)
+            texture_map = dummy_texture)
     
+        # show rendered image
+        # pylab.imshow(rendered_image[0].cpu().detach())
+        # pylab.title(f'calculate_valid_texture_pixels')
+        # pylab.waitforbuttonpress(0)
+        # pylab.close()
+
         ### Image Losses ###
-        image_loss = torch.mean(torch.abs(rendered_image - torch.ones_like(rendered_image, device='cuda', requires_grad=False) * 9999.9))
+        ##image_loss = torch.mean(torch.abs(rendered_image + torch.ones_like(rendered_image, device='cuda', requires_grad=False) * 0.5))
+        image_loss = torch.mean(torch.abs(rendered_image))
+        
         loss += image_loss
+
+    
 
     ### Update the parameters ###
     loss.backward()
 
-    # TODO: get gradient
-    valid_pixels = fish_texture.texture.clone()
+    torch.set_printoptions(profile="full")
+    print(f'dummy_texture.grad = {dummy_texture.grad[0]}')
+
+    valid_pixels = torch.zeros_like(dummy_texture, requires_grad=False)
+    for y in range(0, dummy_texture.shape[2]):
+        for x in range(0, dummy_texture.shape[3]):
+            if (dummy_texture.grad[0, 0, y, x] != 0 or dummy_texture.grad[0, 1, y, x] != 0 or dummy_texture.grad[0, 2, y, x] != 0):
+                valid_pixels[0, :, y, x] = 1
     
+    return valid_pixels
 
 
 def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
@@ -701,6 +728,10 @@ def export_meshes(fish_body_mesh, fish_fin_meshes, path):
     combined_mesh = ian_utils.combine_meshes(all_meshes)
     filepath = os.path.join(path,'combined_mesh.obj')
     ian_utils.export_mesh(combined_mesh, filepath)
+
+def export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data):
+    valid_pixels = calculate_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
+    ian_utils.save_image(torch.clamp(valid_pixels, 0., 1.).permute(0, 2, 3, 1), Path(data['output_path'])/'texture', f'valid_pixels')
 
 if __name__ == "__main__":
     start_time = time.time()
