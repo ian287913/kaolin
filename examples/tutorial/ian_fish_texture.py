@@ -22,6 +22,54 @@ import ian_utils
 import ian_renderer
 
 class FishTexture:
+    # pixel: [w, h, 3]   mask: [w, h, 3]
+    @staticmethod
+    def fill_empty_pixels(pixels : torch.Tensor, mask : torch.Tensor):
+        assert (pixels.shape[1:2] == mask.shape[1:2]), 'the shape[1:2] of pixels and mask should be the same'
+        
+        iter_quota = 10
+        updated_mask = torch.zeros_like(pixels)
+        while (iter_quota > 0):
+            update_flag = False
+            updated_mask[:, :, :] = 0
+
+            for x in range(0, pixels.shape[0]):
+                for y in range(0, pixels.shape[1]):
+                    if (mask[x, y, 0] == 0):
+                        # fill the pixel by neighbor
+                        if (FishTexture.calculate_color_by_neighbor(pixels, mask, updated_mask, x, y) == True):
+                            update_flag = True
+
+            if (update_flag == True):
+                mask = mask + updated_mask
+            else:
+                break
+
+            iter_quota -= 1
+
+        return pixels
+    
+    @staticmethod
+    def calculate_color_by_neighbor(pixels : torch.Tensor, mask : torch.Tensor, updated_mask : torch.Tensor, x, y):
+        valid_neighbors = []
+        neighbor_directions = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+        for idx, neighbor_direction in enumerate(neighbor_directions):
+            neighbor_x = x + neighbor_direction[0]
+            neighbor_y = y + neighbor_direction[1]
+            if (neighbor_x >= pixels.shape[0] or 
+                neighbor_x < 0 or
+                neighbor_y >= pixels.shape[1] or 
+                neighbor_y < 0):
+                continue
+            if (mask[neighbor_x, neighbor_y, 0] != 0):
+                valid_neighbors.append(pixels[neighbor_x, neighbor_y, :])
+        if (len(valid_neighbors) != 0):
+            updated_mask[x, y, 0] = 1
+            pixels[x, y, :] = sum(valid_neighbors)/float(len(valid_neighbors))
+            return True
+        else:
+            return False
+
     def __init__(self, 
                  texture_res, texture_lr = 5e-1, scheduler_step_size = 20, scheduler_gamma = 0.5,
                  ):

@@ -271,7 +271,6 @@ def calculate_valid_texture_pixels(fish_body_mesh:ian_fish_body_mesh.FishBodyMes
                   renderer:ian_renderer.Renderer,
                   fish_texture:ian_fish_texture.FishTexture,
                   data):
-    print('calculating valid texture pixels...')
     
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
@@ -729,9 +728,13 @@ def export_meshes(fish_body_mesh, fish_fin_meshes, path):
     filepath = os.path.join(path,'combined_mesh.obj')
     ian_utils.export_mesh(combined_mesh, filepath)
 
-def export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data):
+def export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture:ian_fish_texture.FishTexture, data):
+    print('calculating valid texture pixels...')
     valid_pixels = calculate_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
+    print('filling invalid texture pixels...')
+    filled_pixels = ian_fish_texture.FishTexture.fill_empty_pixels(torch.clamp(fish_texture.texture.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu(), torch.clamp(valid_pixels.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu())
     ian_utils.save_image(torch.clamp(valid_pixels, 0., 1.).permute(0, 2, 3, 1), Path(data['output_path'])/'texture', f'valid_pixels')
+    ian_utils.save_image(filled_pixels.unsqueeze(0), Path(data['output_path'])/'texture', f'filled_pixels')
 
 if __name__ == "__main__":
     start_time = time.time()
