@@ -156,6 +156,9 @@ def main():
     global fig
     global ax
 
+    if (len(sys.argv) > 1):
+        loading_dir = sys.argv[1]
+
     # get all masks
     mask_dict = load_masks(loading_dir, mask_name)
     overlay_image = load_image(os.path.join(loading_dir, rgb_name))
