@@ -80,7 +80,7 @@ def train_fish():
     fin_uv_bound_weight = 100
 
     # parameters
-    rendered_path_single = "./resources/(diffused) bowfin fish/"
+    rendered_path_single = "./resources/(diffused) goldfish/"
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
@@ -151,8 +151,8 @@ def train_fish():
     hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-4,   3e-5,   3e-6]
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
     hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   1e-4,   0,      0]
-    hyperparameter['fin_dir_lr_list'] =     [0,     5e-2,   3e-2,   1e-2,   5e-3]
-    hyperparameter['fin_expand_epoch_list'] =   [20000,   25000,    30000,    35000]
+    hyperparameter['fin_dir_lr_list'] =     [0,     5e-2,   3e-2,   2e-2,   1e-2]
+    hyperparameter['fin_expand_epoch_list'] =   [200,   350,    30000,    35000]
     hyperparameter['fin_dir_expand_list'] =     [0.1,   0.1,    0.1,    0.1]
 
 
