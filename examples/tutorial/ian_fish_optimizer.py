@@ -64,7 +64,6 @@ def train_fish():
     alpha_weight = 200
     root_pos_weight = 100
     ###alpha_weight = 4.87 # for IOU
-    negative_ys_weight = 0.9 # this will cause explosion!
     y_lr = 5e-2
     t_lr = 5e-2
     scheduler_step_size = 1000
@@ -81,7 +80,7 @@ def train_fish():
     fin_uv_bound_weight = 100
 
     # parameters
-    rendered_path_single = "./resources/rendered_goldfish/"
+    rendered_path_single = "./resources/(diffused) bowfin fish/"
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
@@ -112,9 +111,9 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 50
-    hyperparameter['texture_start_train_epoch'] = 0
-    hyperparameter['fin_start_train_epoch'] = 10000000
+    hyperparameter['num_epoch'] = 1200
+    hyperparameter['texture_start_train_epoch'] = 1100
+    hyperparameter['fin_start_train_epoch'] = 500
     hyperparameter['mask_loss_enable_epoch'] = 150
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
@@ -128,7 +127,8 @@ def train_fish():
     hyperparameter['image_weight'] = image_weight
     hyperparameter['alpha_weight'] = alpha_weight
     hyperparameter['root_pos_weight'] = root_pos_weight
-    hyperparameter['negative_ys_weight'] = negative_ys_weight
+    ##hyperparameter['negative_ys_weight'] = 0.3
+    hyperparameter['negative_ys_weight'] = 0.9
     hyperparameter['y_lr'] = y_lr
     hyperparameter['t_lr'] = t_lr
     hyperparameter['origin_pos_lr'] = origin_pos_lr
@@ -142,7 +142,8 @@ def train_fish():
 
     # lr control
     hyperparameter['body_lr_epoch_list'] =   [0,    100,    150,    300,    400]
-    hyperparameter['body_spline_lr_list'] =  [0,    0,      2e-2,   5e-3,   5e-4]
+    hyperparameter['body_t_lr_list'] =       [0,    0,      1e-3,   5e-4,   5e-5]
+    hyperparameter['body_y_lr_list'] =       [0,    0,      8e-3,   5e-3,   5e-4]
     hyperparameter['body_root_lr_list'] =    [5e-2, 5e-3,   5e-4,   5e-5,   5e-5]
 
     hyperparameter['fin_lr_epoch_list'] =   [0,     150,    300,    400,    500]
@@ -150,7 +151,10 @@ def train_fish():
     hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-4,   3e-5,   3e-6]
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
     hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   1e-4,   0,      0]
-    hyperparameter['fin_dir_lr_list'] =     [0,     1e-1,   1e-4,   1e-4,   1e-5]
+    hyperparameter['fin_dir_lr_list'] =     [0,     5e-2,   3e-2,   1e-2,   5e-3]
+    hyperparameter['fin_expand_epoch_list'] =   [20000,   25000,    30000,    35000]
+    hyperparameter['fin_dir_expand_list'] =     [0.1,   0.1,    0.1,    0.1]
+
 
     hyperparameter  ['texture_jitter_epoch_list'] =   [1000,     20000,    30000,    40000]
     hyperparameter  ['texture_jitter_range_list'] =   [1e-1,  2e-2,   1e-2,   1e-3]
@@ -190,14 +194,13 @@ def train_fish():
     
 
     ## set pectoral fin
-    if ('pectoral_fin' in fish_fin_meshes.keys()):
-        fish_fin_meshes['pectoral_fin'].grow_mode = 'double_sided'
-        fish_fin_meshes['pectoral_fin'].wave_angle = torch.tensor(-torch.pi/3, dtype=torch.float, device='cuda', requires_grad=False)
-    if ('pelvic_fin' in fish_fin_meshes.keys()):
-        fish_fin_meshes['pelvic_fin'].grow_mode = 'double_sided'
-        fish_fin_meshes['pelvic_fin'].wave_angle = torch.tensor(-torch.pi/3.5, dtype=torch.float, device='cuda', requires_grad=False)
+    # if ('pectoral_fin' in fish_fin_meshes.keys()):
+    #     fish_fin_meshes['pectoral_fin'].grow_mode = 'double_sided'
+    #     fish_fin_meshes['pectoral_fin'].wave_angle = torch.tensor(-torch.pi/3, dtype=torch.float, device='cuda', requires_grad=False)
+    # if ('pelvic_fin' in fish_fin_meshes.keys()):
+    #     fish_fin_meshes['pelvic_fin'].grow_mode = 'double_sided'
+    #     fish_fin_meshes['pelvic_fin'].wave_angle = torch.tensor(-torch.pi/3, dtype=torch.float, device='cuda', requires_grad=False)
 
-    print(f'fish_body_mesh.dirty = {fish_body_mesh.dirty}')
 
     ##################################### TRAINING #####################################
     loss_history = []
@@ -209,12 +212,12 @@ def train_fish():
             if (epoch >= hyperparameter['texture_start_train_epoch']):
                 visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, False, fish_texture)
             else:
-                visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, False, None)
+                visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, True, None)
                 
         
         # train texture
         if (epoch >= hyperparameter['texture_start_train_epoch']):
-            loss = train_texture(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data, epoch)
+            loss = train_texture(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data, epoch - hyperparameter['texture_start_train_epoch'])
             # if (epoch == 1):
             #     # export valid pixels
             #     export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
@@ -231,7 +234,7 @@ def train_fish():
                 loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, 
                                        renderer, dummy_texture_map, 
                                        data, data[fin_name + '_mask'], data['root_segmentation'][fin_name + '_mask'], 
-                                       epoch)
+                                       epoch - hyperparameter['fin_start_train_epoch'])
         print(f"Epoch {epoch} - loss: {float(loss)}")
         loss_history.append(loss.detach().cpu().numpy().tolist())
 
@@ -418,14 +421,16 @@ def train_body_mesh(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
         alpha_weight = 0
 
     # override lr
-    spline_lr = 0
+    t_lr = 0
+    y_lr = 0
     root_lr = 0
     for idx, lr_epoch in enumerate(data['hyperparameter']['body_lr_epoch_list']):
         if (epoch >= lr_epoch):
-            spline_lr = data['hyperparameter']['body_spline_lr_list'][idx]
+            t_lr = data['hyperparameter']['body_t_lr_list'][idx]
+            y_lr = data['hyperparameter']['body_y_lr_list'][idx]
             root_lr = data['hyperparameter']['body_root_lr_list'][idx]
-    fish_body_mesh.set_t_lr(spline_lr)
-    fish_body_mesh.set_y_lr(spline_lr)
+    fish_body_mesh.set_t_lr(t_lr)
+    fish_body_mesh.set_y_lr(y_lr)
     fish_body_mesh.set_root_lr(root_lr)
 
     # reset mesh
@@ -497,9 +502,15 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     root_pos_weight = data['hyperparameter']['root_pos_weight']
 
     # try to expand fin dir
-    if (epoch == 300000 or epoch == 10000000):
-        for fin_name in data['hyperparameter']['fin_list']:
-            fish_fin_mesh.reset_dir(fish_fin_mesh.start_dir + 0.15, fish_fin_mesh.end_dir - 0.15)
+    # if (epoch == 250 or epoch == 10000000):
+    #     for fin_name in data['hyperparameter']['fin_list']:
+    #         fish_fin_mesh.reset_dir(fish_fin_mesh.start_dir + 0.05, fish_fin_mesh.end_dir - 0.05)
+    
+    for idx, expand_epoch in enumerate(data['hyperparameter']['fin_expand_epoch_list']):
+        if (epoch == expand_epoch):
+            expand_radius = data['hyperparameter']['fin_dir_expand_list'][idx]
+            for fin_name in data['hyperparameter']['fin_list']:
+                fish_fin_mesh.reset_dir(fish_fin_mesh.start_dir + expand_radius, fish_fin_mesh.end_dir - expand_radius)
 
     # set lr according to epoch
     t_lr = 0
@@ -731,10 +742,10 @@ def export_meshes(fish_body_mesh, fish_fin_meshes, path):
 def export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture:ian_fish_texture.FishTexture, data):
     print('calculating valid texture pixels...')
     valid_pixels = calculate_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
-    print('filling invalid texture pixels...')
-    filled_pixels = ian_fish_texture.FishTexture.fill_empty_pixels(torch.clamp(fish_texture.texture.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu(), torch.clamp(valid_pixels.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu())
+    ##print('filling invalid texture pixels...')
+    ##filled_pixels = ian_fish_texture.FishTexture.fill_empty_pixels(torch.clamp(fish_texture.texture.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu(), torch.clamp(valid_pixels.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu())
     ian_utils.save_image(torch.clamp(valid_pixels, 0., 1.).permute(0, 2, 3, 1), Path(data['output_path'])/'texture', f'valid_pixels')
-    ian_utils.save_image(filled_pixels.unsqueeze(0), Path(data['output_path'])/'texture', f'filled_pixels')
+    ##ian_utils.save_image(filled_pixels.unsqueeze(0), Path(data['output_path'])/'texture', f'filled_pixels')
 
 if __name__ == "__main__":
     start_time = time.time()

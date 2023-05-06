@@ -311,23 +311,22 @@ class FishBodyMesh:
         assert roots.shape[0] > 1, f'roots.shape[0] should greater than 1!'
         assert top_ys.shape[0] > 1, f'top_ys.shape[0] should greater than 1!'
         assert top_ys.shape[0] > 1, f'top_ys.shape[0] should greater than 1!'
+        assert bottom_ys.shape[0] == top_ys.shape[0], f'error: bottom_ys.shape[0] != top_ys.shape[0]'
         assert thickness_ys.shape[0] > 1, f'thickness_ys.shape[0] should greater than 1!'
         assert stream_ys.shape[0] > 1, f'stream_ys.shape[0] should greater than 1!'
-        assert bottom_ys.shape[0] == top_ys.shape[0], f'error: bottom_ys.shape[0] != top_ys.shape[0]'
 
         self.dirty = False
 
         # expand top_ys to top_xyzs
         top_xs = torch.zeros(top_ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)
-        top_zs = stream_ys.clone()
-        top_zs.requires_grad = False
+        top_zs = stream_ys.detach()
         top_xyzs = torch.cat(
             (top_xs.unsqueeze(1), 
              top_ys.unsqueeze(1), 
              top_zs.unsqueeze(1)), 1)
         # expand bottom_ys to bottom_xyzs (negative)
         bottom_xs = torch.zeros(bottom_ys.shape[0], dtype=torch.float, device='cuda', requires_grad=False)
-        bottom_zs = stream_ys.clone()
+        bottom_zs = stream_ys.detach()
         bottom_zs.requires_grad = False
         bottom_xyzs = torch.cat(
             (bottom_xs.unsqueeze(1), 
