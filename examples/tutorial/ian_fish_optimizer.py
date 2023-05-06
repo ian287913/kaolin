@@ -163,9 +163,7 @@ def train_fish():
     data['rendered_path'] = rendered_path_single
     data['output_path'] = output_path
 
-    # fins that will be instantiated
-    data['hyperparameter']['fin_list'] = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
-    ##data['hyperparameter']['fin_list'] = []
+    
 
     # init body mesh
     load_body_mesh_from_json = True
@@ -175,6 +173,12 @@ def train_fish():
         fish_body_mesh = prepare_body_mesh(hyperparameter, None)
     
     # init fin mesh
+    # fins that will be instantiated
+    data['hyperparameter']['fin_list'] = []
+    for idx, fin_mask_name in enumerate(data['fin_masks'].keys()):
+        data['hyperparameter']['fin_list'].append(fin_mask_name[:-len('_mask')])
+    ##data['hyperparameter']['fin_list'] = ['dorsal_fin', 'caudal_fin', 'anal_fin', 'pelvic_fin', 'pectoral_fin']
+    ##data['hyperparameter']['fin_list'] = []
     load_fin_mesh_from_json = True
     if (load_fin_mesh_from_json):
         fish_fin_meshes = prepare_fin_meshes(hyperparameter, rendered_path_single)
@@ -233,7 +237,7 @@ def train_fish():
             for fin_name in data['hyperparameter']['fin_list']:
                 loss += train_fin_mesh(fish_fin_meshes[fin_name], fish_body_mesh, 
                                        renderer, dummy_texture_map, 
-                                       data, data[fin_name + '_mask'], data['root_segmentation'][fin_name + '_mask'], 
+                                       data, data['fin_masks'][fin_name + '_mask'], data['root_segmentation'][fin_name + '_mask'], 
                                        epoch - hyperparameter['fin_start_train_epoch'])
         print(f"Epoch {epoch} - loss: {float(loss)}")
         loss_history.append(loss.detach().cpu().numpy().tolist())
@@ -679,7 +683,7 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
         # fins
         for fin_name in data['hyperparameter']['fin_list']:
             if (fin_name in fish_fin_meshes):
-                gt_fin_mask = data[fin_name + '_mask'].cuda()
+                gt_fin_mask = data['fin_masks'][fin_name + '_mask'].cuda()
                 rendered_image += gt_fin_mask * torch.tensor(gt_fin_draw_color, dtype=torch.float, device='cuda', requires_grad=False)
 
     # # print(f"visualize_results: rendered_image.shape = {rendered_image.shape}")
