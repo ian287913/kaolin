@@ -47,11 +47,12 @@ class PixelFiller:
             if (update_flag == True):
                 mask = mask + updated_mask
             else:
+                print(f'iteration breaked')
                 break
 
             iter_quota -= 1
 
-        return pixels
+        return (pixels, mask)
     
     @staticmethod
     def calculate_color_by_neighbor(pixels : torch.Tensor, mask : torch.Tensor, updated_mask : torch.Tensor, x, y):
@@ -78,14 +79,17 @@ class PixelFiller:
     def Fill_pixels(pixels_path:Path, mask_path:Path, name:str, iter_quota):
         pixels = ian_utils.import_rgb(pixels_path)
         mask = ian_utils.import_rgb(mask_path)
-        filled_pixels = PixelFiller.fill_empty_pixels(pixels, mask, iter_quota)
+        (filled_pixels, filled_mask) = PixelFiller.fill_empty_pixels(pixels, mask, iter_quota)
+        print(f'filled_mask.shape = {filled_mask.shape}')
         print(f'filled_pixels.shape = {filled_pixels.shape}')
         # 512, 512, 3
         # 1, 512, 512, 3
         # 1, 512, 3, 512
         shaped_filled_pixels = (torch.clamp(filled_pixels, 0., 1.).unsqueeze(0))##.permute(0, 2, 3, 1)
+        shaped_filled_mask = (torch.clamp(filled_mask, 0., 1.).unsqueeze(0))
         print(f'shaped_filled_pixels.shape = {shaped_filled_pixels.shape}')
         saved_path = ian_utils.save_image(shaped_filled_pixels, Path('./'), name)
+        ian_utils.save_image(shaped_filled_mask, Path('./'), name + "_mask")
         print(f'image saved as {saved_path}')
 
 if __name__ == '__main__':
