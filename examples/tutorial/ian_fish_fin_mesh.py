@@ -363,7 +363,7 @@ class FishFinMesh:
         root_uvs = ian_utils.torch_linspace(clamped_start_uv, clamped_end_uv, lod_x)
         root_xyzs = body_mesh.get_positions_by_uvs(root_uvs)
         # prepare thickness uvs and its location
-        if (gen_left_surface or gen_right_surface):
+        if (gen_left_surface or gen_right_surface or self.grow_mode == 'double_sided'):
             (root_left_uvs, root_right_uvs) = self.calculate_root_thickness_uvs(root_uvs)
 
         root_left_xyzs = None
@@ -371,7 +371,7 @@ class FishFinMesh:
             root_left_xyzs = body_mesh.get_positions_by_uvs(root_left_uvs)
             
         root_right_xyzs = None
-        if (gen_right_surface):
+        if (gen_right_surface or self.grow_mode == 'double_sided'):
             root_right_xyzs = body_mesh.get_positions_by_uvs(root_right_uvs)
 
         # prepare body normals
@@ -446,13 +446,12 @@ class FishFinMesh:
             self.faces = torch.cat((self.faces, left_faces + self.vertices.shape[0]), 0)
             self.vertices = torch.cat((self.vertices, left_vertices), 0)
             self.uvs = torch.cat((self.uvs, left_uvs), 0)
-
         if (root_right_xyzs is not None):
             (right_vertices, right_faces, right_uvs) = self.generate_surface(root_right_xyzs, root_xyzs + rotated_grow_xyzs, lod_y)
             self.faces = torch.cat((self.faces, right_faces + self.vertices.shape[0]), 0)
             self.vertices = torch.cat((self.vertices, right_vertices), 0)
             self.uvs = torch.cat((self.uvs, right_uvs), 0)
-
+        # only middle
         if ((root_left_xyzs is None) and (root_right_xyzs is None)):
             (mid_vertices, mid_faces, mid_uvs) = self.generate_surface(root_xyzs, root_xyzs + rotated_grow_xyzs, lod_y)
             self.faces = torch.cat((self.faces, mid_faces + self.vertices.shape[0]), 0)
@@ -578,7 +577,7 @@ class FishFinMesh:
         grow_mode = None
         if ('grow_mode' in json_dict['parameters']):
             grow_mode = json_dict['parameters']['grow_mode']
-        # grow_mode
+        # wave angle
         wave_angle = None
         if ('wave_angle' in json_dict['parameters']):
             wave_angle = json_dict['parameters']['wave_angle']
