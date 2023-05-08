@@ -24,6 +24,7 @@ import ian_renderer
 import ian_fish_fin_mesh
 import ian_fish_body_mesh
 import ian_fish_texture
+import ian_pixel_filler
 
 
 def prepare_body_mesh(hyperparameter:dict, load_path = None):
@@ -80,7 +81,7 @@ def train_fish():
     fin_uv_bound_weight = 100
 
     # parameters
-    rendered_path_single = "./resources/(diffused) striped bass/"
+    rendered_path_single = "./resources/(diffused) tuna/"
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
@@ -257,7 +258,14 @@ def train_fish():
 
     export_meshes(fish_body_mesh, fish_fin_meshes, data['output_path'])
 
-    export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
+    valid_pixels = export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
+
+    print('Fill invalid pixel? (enter iteration number)')
+    input_text = input()
+    if(input_text != ""):
+        iteration_number = int(input_text)
+        fill_invalid_texture_pixels(fish_texture, valid_pixels, iteration_number, data)
+
     
 
 # arrange each mesh vu in a NxN grid
@@ -746,10 +754,16 @@ def export_meshes(fish_body_mesh, fish_fin_meshes, path):
 def export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture:ian_fish_texture.FishTexture, data):
     print('calculating valid texture pixels...')
     valid_pixels = calculate_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
-    ##print('filling invalid texture pixels...')
-    ##filled_pixels = ian_fish_texture.FishTexture.fill_empty_pixels(torch.clamp(fish_texture.texture.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu(), torch.clamp(valid_pixels.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu())
     ian_utils.save_image(torch.clamp(valid_pixels, 0., 1.).permute(0, 2, 3, 1), Path(data['output_path'])/'texture', f'valid_pixels')
-    ##ian_utils.save_image(filled_pixels.unsqueeze(0), Path(data['output_path'])/'texture', f'filled_pixels')
+    return valid_pixels
+
+def fill_invalid_texture_pixels(fish_texture:ian_fish_texture.FishTexture, valid_pixels, iteration_num, data):
+    print('filling invalid texture pixels...')
+    (filled_pixels, filled_mask) = ian_pixel_filler.PixelFiller.fill_empty_pixels(torch.clamp(fish_texture.texture.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu(),
+                                                   torch.clamp(valid_pixels.clone(), 0., 1.).permute(0, 2, 3, 1)[0].cpu(),
+                                                   iteration_num)
+    ian_utils.save_image(filled_pixels.unsqueeze(0), Path(data['output_path'])/'texture', f'filled_pixels_{iteration_num}')
+    ian_utils.save_image(filled_mask.unsqueeze(0), Path(data['output_path'])/'texture', f'filled_mask_{iteration_num}')
 
 if __name__ == "__main__":
     start_time = time.time()
