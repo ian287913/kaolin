@@ -65,59 +65,26 @@ def load_renderer(texture):
     renderer = ian_renderer.Renderer('cuda', 1, (texture.shape[2], texture.shape[3]), 'nearest')
     return renderer
 
-def train_texture():
-    # load mesh
-    (vertices, faces, uvs, face_uvs) = load_mesh(TRAINING_FOLDER)
-    # load texture and mask
-    (texture, mask) = load_texture_and_mask(os.path.join(TRAINING_FOLDER, 'texture'))
-    # load renderer
-    renderer = load_renderer(texture)
-    # load gt rgb
-    data = ian_utils.load_rendered_png_and_camera_data(TRAINING_FOLDER, 0)
 
-    # train
-    rendered_image, mask = render_mesh(data, mask, renderer, vertices, faces, uvs, face_uvs)
-    ###rendered_image = render_mesh(data, texture, renderer, vertices, faces, uvs, face_uvs)
-    print(f'mask size = {mask.shape}')
-    inpaint_mask = calculate_inpaint_mask(rendered_image, mask)
-    show_image(mask)
-    show_image(inpaint_mask)
-    # export texture
-    # export mask
-    # export rendered texture
-    # export rendered mask
-    return None
 
 def calculate_inpaint_mask(rendered_mask, triangle_mask):
-    color_set = set()
     for x in range(rendered_mask.shape[1]):
         for y in range(rendered_mask.shape[2]):
-            color_set.add(triangle_mask[0, x, y, 0].detach().cpu().item())
-            ##print(f'[{x},{y}] = {triangle_mask[0, x, y, 0]}')
             if (triangle_mask[0, x, y, 0] == 0):
                 rendered_mask[0, x, y, :] = 1
-    print(f'set = {color_set}')
-    
     return rendered_mask
 
+# image with shape [1, w, h, c]
 def show_image(rendered_image):
     pylab.imshow(rendered_image[0].cpu().detach())
     pylab.title(f'rendered_image')
     pylab.waitforbuttonpress(0)
     pylab.cla()
-    
-    # # save or show image
-    # save_image = False
-    # if (save_image):
-    #     fig_path = f"{data['output_path']}{image_name}.png"
-    #     pylab.savefig(fig_path)
-    #     pylab.close()
-    #     print(f'fig saved at {fig_path}')
-    #     if (fish_texture is not None):
-    #         ian_utils.save_image(torch.clamp(texture_map, 0., 1.).permute(0, 2, 3, 1), Path(data['output_path'])/'texture', f'{image_name}_texture')
-    # else:
-    #     pylab.waitforbuttonpress(0)
-    #     pylab.cla()
+
+# image with shape [1, w, h, c]
+def save_image(rendered_image, folder_path, filename):
+    ian_utils.save_image(torch.clamp(rendered_image, 0., 1.), Path(folder_path), filename)
+    # ian_utils.save_image(torch.clamp(rendered_image, 0., 1.).permute(0, 2, 3, 1), Path(folder_path)/'texture', filename)
 
 def render_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertices, faces, uvs, face_uvs):
 
@@ -137,6 +104,29 @@ def render_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertices, fac
     
     return rendered_image, mask
 
+def train_texture():
+    # load mesh
+    (vertices, faces, uvs, face_uvs) = load_mesh(TRAINING_FOLDER)
+    # load texture and mask
+    (texture, mask) = load_texture_and_mask(os.path.join(TRAINING_FOLDER, 'texture'))
+    # load renderer
+    renderer = load_renderer(texture)
+    # load gt rgb
+    data = ian_utils.load_rendered_png_and_camera_data(TRAINING_FOLDER, 0)
+
+    # train
+    rendered_image, triangle_mask = render_mesh(data, texture, renderer, vertices, faces, uvs, face_uvs)
+    rendered_mask, triangle_mask = render_mesh(data, mask, renderer, vertices, faces, uvs, face_uvs)
+    inpaint_mask = calculate_inpaint_mask(rendered_mask.detach().cpu(), triangle_mask.detach().cpu())
+    # show_image(rendered_image)
+    # show_image(inpaint_mask)
+    save_image(rendered_image, TRAINING_FOLDER, 'front_rendered')
+    save_image(inpaint_mask, TRAINING_FOLDER, 'front_inpaint_mask')
+    # export texture
+    # export mask
+    # export rendered texture
+    # export rendered mask
+    return None
 
 if __name__ == "__main__":
     start_time = time.time()
