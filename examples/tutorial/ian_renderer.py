@@ -166,9 +166,15 @@ class Renderer:
         if (texture_map == None):
             texture_map = mesh.texture_map 
         # render image and mask
-        return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh, sigmainv, texture_map, offset)
+        return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], mesh.vertices, mesh.faces, mesh.get_face_uvs(), sigmainv, texture_map, offset)
 
-    def render_image_and_mask(self, cam_proj, cam_transform, height, width, mesh, sigmainv = 7000, texture_map = None, offset = None):
+    def render_image_and_mask_with_camera_params_with_mesh_data(self, elev, azim, r, look_at_height, fovyangle, vertices, faces, face_uvs, sigmainv = 7000, texture_map = None, offset = None):
+        cam_transform = ian_utils.get_camera_transform_from_view(elev, azim, r, look_at_height).cuda()
+        cam_proj = ian_utils.get_camera_projection(fovyangle).unsqueeze(0).cuda()
+        # render image and mask
+        return self.render_image_and_mask(cam_proj, cam_transform, self.render_res[0], self.render_res[1], vertices, faces, face_uvs, sigmainv, texture_map, offset)
+
+    def render_image_and_mask(self, cam_proj, cam_transform, height, width, vertices, faces, face_uvs, sigmainv = 7000, texture_map = None, offset = None):
         if (offset is not None):
             camera_transform = cam_transform + offset
         else:
@@ -177,8 +183,8 @@ class Renderer:
         ### Prepare mesh data with projection regarding to camera ###
         face_vertices_camera, face_vertices_image, face_normals = \
             kal.render.mesh.prepare_vertices(
-                mesh.vertices.repeat(self.batch_size, 1, 1),
-                mesh.faces,
+                vertices.repeat(self.batch_size, 1, 1),
+                faces,
                 cam_proj,
                 camera_transform=camera_transform
             )
@@ -190,8 +196,8 @@ class Renderer:
         # ian: torch.ones() makes all pixels inside any triangle get "1" (alpha)
         # ian: which means all the triangles are opaque
         face_attributes = [
-            mesh.get_face_uvs().repeat(self.batch_size, 1, 1, 1),
-            torch.ones((self.batch_size, mesh.faces.shape[0], 3, 1), device='cuda')
+            face_uvs.repeat(self.batch_size, 1, 1, 1),
+            torch.ones((self.batch_size, faces.shape[0], 3, 1), device='cuda')
         ]
 
         # print(f"\n\nface_vertices_camera.shape = {face_vertices_camera.shape}")
