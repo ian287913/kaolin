@@ -65,8 +65,6 @@ def load_renderer(texture):
     renderer = ian_renderer.Renderer('cuda', 1, (texture.shape[2], texture.shape[3]), 'nearest')
     return renderer
 
-
-
 def calculate_inpaint_mask(rendered_mask, triangle_mask):
     for x in range(rendered_mask.shape[1]):
         for y in range(rendered_mask.shape[2]):
@@ -87,7 +85,6 @@ def save_image(rendered_image, folder_path, filename):
     # ian_utils.save_image(torch.clamp(rendered_image, 0., 1.).permute(0, 2, 3, 1), Path(folder_path)/'texture', filename)
 
 def render_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertices, faces, uvs, face_uvs):
-
     rendered_image = None
     # body
     rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params_with_mesh_data(
@@ -104,6 +101,36 @@ def render_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertices, fac
     
     return rendered_image, mask
 
+def mirror_mesh(vertices:torch.Tensor, faces:torch.Tensor, uvs:torch.Tensor, face_uvs:torch.Tensor):
+    ##inversed_vertices = vertices.clone().detach() * torch.tensor((1, 1, -1), dtype=vertices.dtype, device=vertices.device, requires_grad=False)
+    inversed_vertices = vertices.clone().detach()## * torch.tensor((1, 1, -1), dtype=vertices.dtype, device=vertices.device, requires_grad=False)
+    inversed_vertices[:, :, 2] *=  torch.tensor((-1), dtype=vertices.dtype, device=vertices.device, requires_grad=False)
+    inversed_faces = faces.clone().detach()
+    temp = inversed_faces[:,1].clone().detach()
+    inversed_faces[:,1] = inversed_faces[:,2]
+    inversed_faces[:,2] = temp
+
+    merged_vertices = torch.cat((vertices.clone().detach(), inversed_vertices), 1)
+    merged_faces = torch.cat((faces.clone().detach(), inversed_faces + vertices.shape[0]), 0)
+    merged_uvs = torch.cat((uvs, uvs), 1)
+    merged_face_uvs = kal.ops.mesh.index_vertices_by_faces(merged_uvs, merged_faces).detach()
+    # merged_vertices = torch.cat((vertices.clone().detach(), vertices.clone().detach()), 1)
+    # merged_faces = torch.cat((faces, faces), 0)
+    # merged_uvs = torch.cat((uvs, uvs), 1)
+    # merged_face_uvs = torch.cat((face_uvs, face_uvs), 1)
+
+    print(f'')
+    print(f'vertices.shape = {vertices.shape}')
+    print(f'faces.shape = {faces.shape}')
+    print(f'uvs.shape = {uvs.shape}')
+    print(f'face_uvs.shape = {face_uvs.shape}')
+    print(f'')
+    print(f'merged_vertices.shape = {merged_vertices.shape}')
+    print(f'merged_faces.shape = {merged_faces.shape}')
+    print(f'merged_uvs.shape = {merged_uvs.shape}')
+    print(f'merged_face_uvs.shape = {merged_face_uvs.shape}')
+    return (merged_vertices, merged_faces, merged_uvs, merged_face_uvs)
+
 def train_texture():
     # load mesh
     (vertices, faces, uvs, face_uvs) = load_mesh(TRAINING_FOLDER)
@@ -114,18 +141,23 @@ def train_texture():
     # load gt rgb
     data = ian_utils.load_rendered_png_and_camera_data(TRAINING_FOLDER, 0)
 
+    # create mesh mirror
+    (vertices2, faces2, uvs2, face_uvs2) = mirror_mesh(vertices, faces, uvs, face_uvs)
     # train
-    rendered_image, triangle_mask = render_mesh(data, texture, renderer, vertices, faces, uvs, face_uvs)
-    rendered_mask, triangle_mask = render_mesh(data, mask, renderer, vertices, faces, uvs, face_uvs)
-    inpaint_mask = calculate_inpaint_mask(rendered_mask.detach().cpu(), triangle_mask.detach().cpu())
-    # show_image(rendered_image)
-    # show_image(inpaint_mask)
-    save_image(rendered_image, TRAINING_FOLDER, 'front_rendered')
-    save_image(inpaint_mask, TRAINING_FOLDER, 'front_inpaint_mask')
     # export texture
     # export mask
+
     # export rendered texture
     # export rendered mask
+    # rendered_image, triangle_mask = render_mesh(data, texture, renderer, vertices, faces, uvs, face_uvs)
+    # rendered_mask, triangle_mask = render_mesh(data, mask, renderer, vertices, faces, uvs, face_uvs)
+    rendered_image, triangle_mask = render_mesh(data, texture, renderer, vertices2, faces2, uvs2, face_uvs2)
+    rendered_mask, triangle_mask = render_mesh(data, mask, renderer, vertices2, faces2, uvs2, face_uvs2)
+
+    ##inpaint_mask = calculate_inpaint_mask(rendered_mask.detach().cpu(), triangle_mask.detach().cpu())
+    save_image(rendered_image, TRAINING_FOLDER, 'front_rendered')
+    ##save_image(inpaint_mask, TRAINING_FOLDER, 'front_inpaint_mask')
+    
     return None
 
 if __name__ == "__main__":
