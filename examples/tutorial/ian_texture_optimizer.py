@@ -76,14 +76,29 @@ def train_texture():
     data = ian_utils.load_rendered_png_and_camera_data(TRAINING_FOLDER, 0)
 
     # train
-    rendered_image = render_mesh(data, texture, renderer, vertices, faces, uvs, face_uvs)
-
-    show_image(rendered_image)
+    rendered_image, mask = render_mesh(data, mask, renderer, vertices, faces, uvs, face_uvs)
+    ###rendered_image = render_mesh(data, texture, renderer, vertices, faces, uvs, face_uvs)
+    print(f'mask size = {mask.shape}')
+    inpaint_mask = calculate_inpaint_mask(rendered_image, mask)
+    show_image(mask)
+    show_image(inpaint_mask)
     # export texture
     # export mask
     # export rendered texture
     # export rendered mask
     return None
+
+def calculate_inpaint_mask(rendered_mask, triangle_mask):
+    color_set = set()
+    for x in range(rendered_mask.shape[1]):
+        for y in range(rendered_mask.shape[2]):
+            color_set.add(triangle_mask[0, x, y, 0].detach().cpu().item())
+            ##print(f'[{x},{y}] = {triangle_mask[0, x, y, 0]}')
+            if (triangle_mask[0, x, y, 0] == 0):
+                rendered_mask[0, x, y, :] = 1
+    print(f'set = {color_set}')
+    
+    return rendered_mask
 
 def show_image(rendered_image):
     pylab.imshow(rendered_image[0].cpu().detach())
@@ -120,7 +135,7 @@ def render_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertices, fac
         sigmainv = 17000,
         texture_map=texture_map)
     
-    return rendered_image
+    return rendered_image, mask
 
 
 if __name__ == "__main__":
