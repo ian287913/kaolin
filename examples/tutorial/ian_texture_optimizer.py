@@ -154,9 +154,9 @@ def train_texture():
     rendered_image, triangle_mask = render_mesh(data, texture, renderer, vertices2, faces2, uvs2, face_uvs2)
     rendered_mask, triangle_mask = render_mesh(data, mask, renderer, vertices2, faces2, uvs2, face_uvs2)
 
-    ##inpaint_mask = calculate_inpaint_mask(rendered_mask.detach().cpu(), triangle_mask.detach().cpu())
+    inpaint_mask = calculate_inpaint_mask(rendered_mask.detach().cpu(), triangle_mask.detach().cpu())
     save_image(rendered_image, TRAINING_FOLDER, 'front_rendered')
-    ##save_image(inpaint_mask, TRAINING_FOLDER, 'front_inpaint_mask')
+    save_image(inpaint_mask, TRAINING_FOLDER, 'front_inpaint_mask')
     
     return None
 
