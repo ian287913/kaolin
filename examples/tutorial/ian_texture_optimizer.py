@@ -111,7 +111,7 @@ def mirror_mesh(vertices:torch.Tensor, faces:torch.Tensor, uvs:torch.Tensor, fac
     inversed_faces[:,2] = temp
 
     merged_vertices = torch.cat((vertices.clone().detach(), inversed_vertices), 1)
-    merged_faces = torch.cat((faces.clone().detach(), inversed_faces + vertices.shape[0]), 0)
+    merged_faces = torch.cat((faces.clone().detach(), inversed_faces + vertices.shape[1]), 0)
     merged_uvs = torch.cat((uvs, uvs), 1)
     merged_face_uvs = kal.ops.mesh.index_vertices_by_faces(merged_uvs, merged_faces).detach()
     # merged_vertices = torch.cat((vertices.clone().detach(), vertices.clone().detach()), 1)
