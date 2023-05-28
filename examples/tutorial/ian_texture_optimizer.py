@@ -68,7 +68,7 @@ def load_renderer(texture):
 def calculate_inpaint_mask(rendered_mask, triangle_mask):
     for x in range(rendered_mask.shape[1]):
         for y in range(rendered_mask.shape[2]):
-            if (triangle_mask[0, x, y, 0] == 0):
+            if (triangle_mask[0, x, y, 0] == 0 or rendered_mask[0, x, y, 0] > 0):
                 rendered_mask[0, x, y, :] = 1
     return rendered_mask
 
