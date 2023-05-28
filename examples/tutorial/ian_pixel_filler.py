@@ -26,8 +26,8 @@ class PixelFiller:
     # mask:  [w, h, 3] , black color means invalid
     @staticmethod
     def fill_empty_pixels(pixels : torch.Tensor, mask : torch.Tensor, iter_quota = 10):
-        print(f'pixels.shape = {pixels.shape}')
-        print(f'mask.shape = {mask.shape}')
+        # print(f'pixels.shape = {pixels.shape}')
+        # print(f'mask.shape = {mask.shape}')
         
         assert (pixels.shape[1:2] == mask.shape[1:2]), 'the shape[1:2] of pixels and mask should be the same'
         
@@ -76,17 +76,56 @@ class PixelFiller:
             return False
     
     @staticmethod
-    def Fill_pixels(pixels_path:Path, mask_path:Path, name:str, iter_quota):
+    def Split_Image(image:torch.Tensor, grid_size):
+        width = image.shape[0] / grid_size
+        height = image.shape[1] / grid_size
+        x_images = []
+        for x in range(grid_size):
+            y_images = []
+            for y in range(grid_size):
+                start_x = round(width * x)
+                start_y = round(width * y)
+                end_x = round(height * (x+1))
+                end_y = round(height * (y+1))
+                y_images.append(image[start_x:end_x, start_y:end_y, :])
+            x_images.append(y_images)
+            
+        return x_images
+    
+    @staticmethod
+    def Merge_Image(images:torch.Tensor):
+        merged_ys = []
+        for x in range(len(images)):
+             merged_ys.append(torch.cat(images[x], dim = 1))
+        merged_xs = torch.cat(merged_ys, dim = 0)
+
+        return merged_xs
+
+    @staticmethod
+    def Fill_pixels(pixels_path:Path, mask_path:Path, name:str, iter_quota, grid_size = 3):
         pixels = ian_utils.import_rgb(pixels_path)
         mask = ian_utils.import_rgb(mask_path)
-        (filled_pixels, filled_mask) = PixelFiller.fill_empty_pixels(pixels, mask, iter_quota)
-        print(f'filled_mask.shape = {filled_mask.shape}')
-        print(f'filled_pixels.shape = {filled_pixels.shape}')
+
+        splitted_images = PixelFiller.Split_Image(pixels, grid_size)
+        splitted_masks = PixelFiller.Split_Image(mask, grid_size)
+
+        for x in range(len(splitted_images)):
+            for y in range(len(splitted_images[0])):
+                print(f'x={x}/{len(splitted_images)}, y={y}/{len(splitted_images[0])}')
+                (filled_pixels, filled_mask) = PixelFiller.fill_empty_pixels(splitted_images[x][y], splitted_masks[x][y], iter_quota)
+                splitted_images[x][y] = filled_pixels
+                splitted_masks[x][y] = filled_mask
+        
+        merged_images = PixelFiller.Merge_Image(splitted_images)
+        merged_masks = PixelFiller.Merge_Image(splitted_masks)
+
+        print(f'merged_images.shape = {merged_images.shape}')
+        print(f'merged_masks.shape = {merged_masks.shape}')
         # 512, 512, 3
         # 1, 512, 512, 3
         # 1, 512, 3, 512
-        shaped_filled_pixels = (torch.clamp(filled_pixels, 0., 1.).unsqueeze(0))##.permute(0, 2, 3, 1)
-        shaped_filled_mask = (torch.clamp(filled_mask, 0., 1.).unsqueeze(0))
+        shaped_filled_pixels = (torch.clamp(merged_images, 0., 1.).unsqueeze(0))##.permute(0, 2, 3, 1)
+        shaped_filled_mask = (torch.clamp(merged_masks, 0., 1.).unsqueeze(0))
         print(f'shaped_filled_pixels.shape = {shaped_filled_pixels.shape}')
         saved_path = ian_utils.save_image(shaped_filled_pixels, Path('./'), name)
         ian_utils.save_image(shaped_filled_mask, Path('./'), name + "_mask")
