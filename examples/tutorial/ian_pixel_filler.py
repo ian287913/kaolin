@@ -3,6 +3,7 @@ import os
 import glob
 import time
 import sys
+import math
 
 import torch
 import torch.nn.functional as F
@@ -77,21 +78,58 @@ class PixelFiller:
     
     @staticmethod
     def Split_Image(image:torch.Tensor, grid_size):
+        margin_pixel = 5
         width = image.shape[0] / grid_size
         height = image.shape[1] / grid_size
+        x_rects = []
         x_images = []
         for x in range(grid_size):
+            y_rects = []
             y_images = []
             for y in range(grid_size):
-                start_x = round(width * x)
-                start_y = round(width * y)
-                end_x = round(height * (x+1))
-                end_y = round(height * (y+1))
+                rect = {}
+                end_x = image.shape[0] - math.floor(width * x)
+                start_y = math.floor(width * y)
+                start_x = image.shape[0] - math.floor(height * (x+1) - margin_pixel)
+                end_y = math.floor(height * (y+1) - margin_pixel)
+                rect['start_x'] = start_x
+                rect['start_y'] = start_y
+                rect['end_x'] = end_x
+                rect['end_y'] = end_y
+                y_rects.append(rect)
                 y_images.append(image[start_x:end_x, start_y:end_y, :])
+            x_rects.append(y_rects)
             x_images.append(y_images)
             
-        return x_images
+        return (x_images, x_rects)
     
+    @staticmethod
+    def Merge_Image_2(images, background_image, rects):
+        #x_offset = 0
+        for x in range(len(images)):
+            #print(f"x_offset = {x_offset}")
+            #y_offset = 0
+            for y in range(len(images[x])):
+                # print(f"y_offset = {y_offset}")
+
+                # print(f"shape of {x},{y} = {images[x][y].shape}")
+                
+                # x_end = x_offset + images[x][y].shape[0]
+                # y_end = y_offset + images[x][y].shape[1]
+                rect = rects[x][y]
+
+                # print(f"overriting at [{x_offset}:{x_end},{y_offset}:{y_end}]")
+                print(f"overriting at [{rect['start_x']}:{rect['end_x']},{rect['start_y']}:{rect['end_y']}]")
+
+                #background_image[x_offset:x_end, y_offset:y_end, :] = images[x][y][:, :, :]
+                background_image[rect['start_x']:rect['end_x'], rect['start_y']:rect['end_y'], :] = images[x][y][:, :, :]
+
+                #y_offset += images[x][y].shape[1]
+
+            #x_offset += images[x][0].shape[0]
+        return background_image
+
+
     @staticmethod
     def Merge_Image(images:torch.Tensor):
         merged_ys = []
@@ -106,8 +144,8 @@ class PixelFiller:
         pixels = ian_utils.import_rgb(pixels_path)
         mask = ian_utils.import_rgb(mask_path)
 
-        splitted_images = PixelFiller.Split_Image(pixels, grid_size)
-        splitted_masks = PixelFiller.Split_Image(mask, grid_size)
+        splitted_images, image_rects = PixelFiller.Split_Image(pixels, grid_size)
+        splitted_masks, mask_rects = PixelFiller.Split_Image(mask, grid_size)
 
         for x in range(len(splitted_images)):
             for y in range(len(splitted_images[0])):
@@ -116,8 +154,19 @@ class PixelFiller:
                 splitted_images[x][y] = filled_pixels
                 splitted_masks[x][y] = filled_mask
         
-        merged_images = PixelFiller.Merge_Image(splitted_images)
-        merged_masks = PixelFiller.Merge_Image(splitted_masks)
+        
+        background_image = pixels.clone()
+        background_mask = mask.clone()
+
+        # background_image = torch.ones([pixels.shape[0], pixels.shape[1], pixels.shape[2]], dtype=pixels.dtype, device=pixels.device)
+        # background_mask = torch.ones([pixels.shape[0], pixels.shape[1], pixels.shape[2]], dtype=pixels.dtype, device=pixels.device)
+
+
+        # merged_images = PixelFiller.Merge_Image(splitted_images)
+        # merged_masks = PixelFiller.Merge_Image(splitted_masks)
+        merged_images = PixelFiller.Merge_Image_2(splitted_images, background_image, image_rects)
+        merged_masks = PixelFiller.Merge_Image_2(splitted_masks, background_mask, mask_rects)
+
 
         print(f'merged_images.shape = {merged_images.shape}')
         print(f'merged_masks.shape = {merged_masks.shape}')

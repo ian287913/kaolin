@@ -256,7 +256,7 @@ def train_fish():
 
     export_loss_history(data['output_path'], loss_history)
 
-    export_meshes(fish_body_mesh, fish_fin_meshes, data['output_path'])
+    export_meshes(fish_body_mesh, fish_fin_meshes, data['output_path'], data['hyperparameter']['texture_res'])
 
     valid_pixels = export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
 
@@ -269,17 +269,18 @@ def train_fish():
     
 
 # arrange each mesh vu in a NxN grid
-def reshape_mesh_uvs(meshes:list):
+def reshape_mesh_uvs(meshes:list, texture_res):
     mesh_count = len(meshes)
     grid_count = math.ceil(math.sqrt(mesh_count))
     grid_size = 1. / float(grid_count)
+    grid_margined_size = grid_size - (10.0/float(texture_res))
 
     for u in range(grid_count):
         for v in range(grid_count):
             idx = u * grid_count + v
             if (idx >= mesh_count):
                 continue
-            meshes[idx].reshape_uvs([u * grid_size, v * grid_size, grid_size, grid_size])
+            meshes[idx].reshape_uvs([u * grid_size, v * grid_size, grid_margined_size, grid_margined_size])
 
 def calculate_valid_texture_pixels(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
                   fish_fin_meshes:dict,
@@ -378,7 +379,7 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
     # reshape uvs
     all_meshes = list(fish_fin_meshes.values())
     all_meshes.insert(0, fish_body_mesh)
-    reshape_mesh_uvs(all_meshes)
+    reshape_mesh_uvs(all_meshes, data['hyperparameter']['texture_res'])
 
 
     # jitter the camera to reduce unsampled texture pixels
@@ -740,12 +741,12 @@ def export_loss_history(path, loss_history):
             fp.write(str(loss) + "\n")
     print(f'file exported to {filepath}.')
 
-def export_meshes(fish_body_mesh, fish_fin_meshes, path):
+def export_meshes(fish_body_mesh, fish_fin_meshes, path, texture_res):
     all_meshes = list(fish_fin_meshes.values())
     all_meshes.insert(0, fish_body_mesh)
 
     # calculate shaped uvs
-    reshape_mesh_uvs(all_meshes)
+    reshape_mesh_uvs(all_meshes, texture_res)
 
     combined_mesh = ian_utils.combine_meshes(all_meshes)
     filepath = os.path.join(path,'combined_mesh.obj')
