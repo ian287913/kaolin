@@ -112,8 +112,8 @@ def train_fish():
 
     # set hyperparameters to data
     hyperparameter = {}
-    hyperparameter['num_epoch'] = 1200
-    hyperparameter['texture_start_train_epoch'] = 1100
+    hyperparameter['num_epoch'] = 1300
+    hyperparameter['texture_start_train_epoch'] = 1200
     hyperparameter['fin_start_train_epoch'] = 500
     hyperparameter['mask_loss_enable_epoch'] = 150
     hyperparameter['key_size'] = key_size
@@ -152,8 +152,8 @@ def train_fish():
     hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-4,   3e-5,   3e-6]
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
     hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   1e-4,   0,      0]
-    hyperparameter['fin_dir_lr_list'] =     [0,     5e-2,   3e-2,   2e-2,   1e-2]
-    hyperparameter['fin_expand_epoch_list'] =   [200,   35000,    30000,    35000]
+    hyperparameter['fin_dir_lr_list'] =     [0,     5e-2,   4e-2,   4e-2,   5e-2]
+    hyperparameter['fin_expand_epoch_list'] =   [20000,   35000,    30000,    35000]
     hyperparameter['fin_dir_expand_list'] =     [0.1,   0.1,    0.1,    0.1]
 
 
@@ -260,11 +260,11 @@ def train_fish():
 
     valid_pixels = export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
 
-    print('Fill invalid pixel? (enter iteration number)')
-    input_text = input()
-    if(input_text != ""):
-        iteration_number = int(input_text)
-        fill_invalid_texture_pixels(fish_texture, valid_pixels, iteration_number, data)
+    # print('Fill invalid pixel? (enter iteration number)')
+    # input_text = input()
+    # if(input_text != ""):
+    #     iteration_number = int(input_text)
+    #     fill_invalid_texture_pixels(fish_texture, valid_pixels, iteration_number, data)
 
     
 
