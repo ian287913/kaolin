@@ -81,7 +81,7 @@ def train_fish():
     fin_uv_bound_weight = 100
 
     # parameters
-    rendered_path_single = "./resources/(BEST) tuna/"
+    rendered_path_single = "./resources/(BEST) croaker/"
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
@@ -128,8 +128,8 @@ def train_fish():
     hyperparameter['image_weight'] = image_weight
     hyperparameter['alpha_weight'] = alpha_weight
     hyperparameter['root_pos_weight'] = root_pos_weight
-    ##hyperparameter['negative_ys_weight'] = 0.3
-    hyperparameter['negative_ys_weight'] = 0.9
+    hyperparameter['negative_ys_weight'] = 0.3
+    ##hyperparameter['negative_ys_weight'] = 0.9
     hyperparameter['y_lr'] = y_lr
     hyperparameter['t_lr'] = t_lr
     hyperparameter['origin_pos_lr'] = origin_pos_lr
@@ -152,7 +152,7 @@ def train_fish():
     hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-4,   3e-5,   3e-6]
     hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
     hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   1e-4,   0,      0]
-    hyperparameter['fin_dir_lr_list'] =     [0,     5e-2,   4e-2,   4e-2,   5e-2]
+    hyperparameter['fin_dir_lr_list'] =     [0,     5e-2,   3e-2,   3e-2,   3e-2]
     hyperparameter['fin_expand_epoch_list'] =   [20000,   35000,    30000,    35000]
     hyperparameter['fin_dir_expand_list'] =     [0.1,   0.1,    0.1,    0.1]
 
@@ -274,13 +274,14 @@ def reshape_mesh_uvs(meshes:list, texture_res):
     grid_count = math.ceil(math.sqrt(mesh_count))
     grid_size = 1. / float(grid_count)
     grid_margined_size = grid_size - (10.0/float(texture_res))
+    grid_offset = 1.0/float(texture_res)
 
     for u in range(grid_count):
         for v in range(grid_count):
             idx = u * grid_count + v
             if (idx >= mesh_count):
                 continue
-            meshes[idx].reshape_uvs([u * grid_size, v * grid_size, grid_margined_size, grid_margined_size])
+            meshes[idx].reshape_uvs([u * grid_size + grid_offset, v * grid_size + grid_offset, grid_margined_size, grid_margined_size])
 
 def calculate_valid_texture_pixels(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, 
                   fish_fin_meshes:dict,
