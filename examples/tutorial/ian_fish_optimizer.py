@@ -567,7 +567,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     root_pos_loss = torch.abs(projected_start_root_xy - gt_start_root_xy).mean() + torch.abs(projected_end_root_xy - gt_end_root_xy).mean()
 
     ### Alpha Losses ###
-    alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda()))
+    alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda())) + torch.mean(torch.clamp(gt_fin_mask[:,:,0].cuda() - soft_mask, min=0.0, max=1.0))
     ##alpha_loss = kal.metrics.render.mask_iou(soft_mask, gt_fin_mask[:,:,0].cuda().unsqueeze(0))
     ### Negative Ys Losses ###
     sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
