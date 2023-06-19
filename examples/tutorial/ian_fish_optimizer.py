@@ -81,7 +81,7 @@ def train_fish():
     fin_uv_bound_weight = 100
 
     # parameters
-    rendered_path_single = "./resources/(diffused) tuna/"
+    rendered_path_single = "./resources/(BEST) tuna/"
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
