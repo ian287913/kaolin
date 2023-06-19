@@ -78,6 +78,7 @@ class PixelFiller:
     
     @staticmethod
     def Split_Image(image:torch.Tensor, grid_size):
+        # the margin in optimizer is set to 10 pixels
         margin_pixel = 5
         width = image.shape[0] / grid_size
         height = image.shape[1] / grid_size

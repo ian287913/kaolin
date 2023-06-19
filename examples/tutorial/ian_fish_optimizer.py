@@ -73,7 +73,7 @@ def train_fish():
     length_xyz_lr = 5e-4
     render_res = 512
     texture_res = 512
-    sigmainv = 17000 # 3000~30000, for soft mask, higher sharper
+    sigmainv = 28000 # 3000~30000, for soft mask, higher sharper
 
     # fin
     fin_dir_lr = 5e-2
