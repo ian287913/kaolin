@@ -11,6 +11,7 @@ echo commands:
 echo f: fish optimizer
 echo s: spline optimizer
 echo m: mask segmentation
+echo p: pixel filler
 echo c: cls
 echo e: exit
 
@@ -22,6 +23,8 @@ if "%command%" == "f" (
 	goto RunSplineOptimizer
 ) else if "%command%" == "m" (
 	goto RunMaskSegmentation
+) else if "%command%" == "p" (
+	goto RunPixelFiller
 ) else if "%command%" == "c" (
 	cls
 	goto PromptUser
@@ -48,6 +51,11 @@ set target_dir=none
 set /p target_dir=
 echo on
 python "./tools/ian_mask_segmentation.py" "%target_dir%"
+goto PromptUser
+
+:RunPixelFiller
+echo on
+python "ian_pixel_filler.py"
 goto PromptUser
 
 

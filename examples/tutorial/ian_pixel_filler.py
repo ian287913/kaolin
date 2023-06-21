@@ -141,7 +141,7 @@ class PixelFiller:
         return merged_xs
 
     @staticmethod
-    def Fill_pixels(pixels_path:Path, mask_path:Path, name:str, iter_quota, grid_size = 3):
+    def Fill_pixels(pixels_path:Path, mask_path:Path, iter_quota, grid_size = 3):
         pixels = ian_utils.import_rgb(pixels_path)
         mask = ian_utils.import_rgb(mask_path)
 
@@ -177,17 +177,31 @@ class PixelFiller:
         shaped_filled_pixels = (torch.clamp(merged_images, 0., 1.).unsqueeze(0))##.permute(0, 2, 3, 1)
         shaped_filled_mask = (torch.clamp(merged_masks, 0., 1.).unsqueeze(0))
         print(f'shaped_filled_pixels.shape = {shaped_filled_pixels.shape}')
-        saved_path = ian_utils.save_image(shaped_filled_pixels, Path('./'), name)
-        ian_utils.save_image(shaped_filled_mask, Path('./'), name + "_mask")
-        print(f'image saved as {saved_path}')
+
+        return (shaped_filled_pixels, shaped_filled_mask)
+        # saved_path = ian_utils.save_image(shaped_filled_pixels, Path('./'), name)
+        # ian_utils.save_image(shaped_filled_mask, Path('./'), name + "_mask")
+        # print(f'image saved as {saved_path}')
+
 
 if __name__ == '__main__':
-    assert (len(sys.argv) == 5), 'usage: python ian_pixel_filler.py <PIXEL_PATH> <MASK_PATH> <OUTPUT_NAME> <ITER_QUOTA>'
+    # assert (len(sys.argv) == 5), 'usage: python ian_pixel_filler.py <PIXEL_PATH> <MASK_PATH> <OUTPUT_NAME> <ITER_QUOTA>'
+    # PixelFiller.Fill_pixels(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))
     
+    working_dir = Path(input("working dir:"))
+    iter_quota = int(input("iter quota:"))
+
+    pixel_path = working_dir / Path('texture_rgb.png')
+    mask_path = working_dir / Path('valid_pixels_rgb.png')
+
+    # fill pixels
     start_time = time.time()
+    (filled_pixels, filled_mask) = PixelFiller.Fill_pixels(pixel_path, mask_path, iter_quota)
+    print(f'Total time elapsed: {time.time() - start_time}s')
 
-    PixelFiller.Fill_pixels(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))
+    # save image
+    saved_path = ian_utils.save_image(filled_pixels, working_dir, f'filled_texture_{iter_quota}')
+    print(f'image saved at {saved_path}')
+    saved_path = ian_utils.save_image(filled_mask, working_dir, f'filled_valid_pixels_{iter_quota}')
+    print(f'image saved at {saved_path}')
 
-    end_time = time.time()
-    time_lapsed = end_time - start_time
-    print(f'Total time elapsed: {time_lapsed}s')
