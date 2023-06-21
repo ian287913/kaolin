@@ -442,18 +442,18 @@ class FishFinMesh:
 
         # surface generation and cat (faces are offested by vertices size)
         if (root_left_xyzs is not None):
-            (left_vertices, left_faces, left_uvs) = self.generate_surface(root_left_xyzs, root_xyzs + rotated_grow_xyzs, lod_y, flip_triangle=True)
+            (left_vertices, left_faces, left_uvs) = self.generate_surface(root_left_xyzs, root_xyzs + rotated_grow_xyzs, lod_y, flip_triangle=True, set_top_z_to_zero=(self.grow_mode == 'single_sided'))
             self.faces = torch.cat((self.faces, left_faces + self.vertices.shape[0]), 0)
             self.vertices = torch.cat((self.vertices, left_vertices), 0)
             self.uvs = torch.cat((self.uvs, left_uvs), 0)
         if (root_right_xyzs is not None):
-            (right_vertices, right_faces, right_uvs) = self.generate_surface(root_right_xyzs, root_xyzs + rotated_grow_xyzs, lod_y)
+            (right_vertices, right_faces, right_uvs) = self.generate_surface(root_right_xyzs, root_xyzs + rotated_grow_xyzs, lod_y, set_top_z_to_zero=(self.grow_mode == 'single_sided'))
             self.faces = torch.cat((self.faces, right_faces + self.vertices.shape[0]), 0)
             self.vertices = torch.cat((self.vertices, right_vertices), 0)
             self.uvs = torch.cat((self.uvs, right_uvs), 0)
         # only middle
         if ((root_left_xyzs is None) and (root_right_xyzs is None)):
-            (mid_vertices, mid_faces, mid_uvs) = self.generate_surface(root_xyzs, root_xyzs + rotated_grow_xyzs, lod_y)
+            (mid_vertices, mid_faces, mid_uvs) = self.generate_surface(root_xyzs, root_xyzs + rotated_grow_xyzs, lod_y, set_top_z_to_zero=(self.grow_mode == 'single_sided'))
             self.faces = torch.cat((self.faces, mid_faces + self.vertices.shape[0]), 0)
             self.vertices = torch.cat((self.vertices, mid_vertices), 0)
             self.uvs = torch.cat((self.uvs, mid_uvs), 0)
@@ -471,13 +471,21 @@ class FishFinMesh:
         self.face_uvs.requires_grad = False
 
     
-    def generate_surface(self, root_xyzs, top_xyzs, lod_y, flip_triangle = False):
+    def generate_surface(self, root_xyzs, top_xyzs, lod_y, flip_triangle = False, set_top_z_to_zero = False):
+        
         # vertices
         vertices = torch.zeros((0, 3), dtype=torch.float, device='cuda', 
                                requires_grad=True)
         # for each column
         for idx, root in enumerate(root_xyzs):
-            new_vertices = ian_utils.torch_linspace(root, top_xyzs[idx], lod_y)
+            top_xyz = top_xyzs[idx]
+            if (set_top_z_to_zero):
+                x = top_xyzs[idx][0]
+                y = top_xyzs[idx][1]
+                z = top_xyzs[idx][2] * 0
+                #  torch.zero(1, dtype=top_xyzs.dtype, device=top_xyzs.device)
+                top_xyz = torch.stack((x, y, z), -1)
+            new_vertices = ian_utils.torch_linspace(root, top_xyz, lod_y)
             vertices = torch.cat((vertices, new_vertices), 0)
         ###vertices = self.vertices.unsqueeze(0)
 
