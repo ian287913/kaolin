@@ -81,7 +81,7 @@ def train_fish():
     fin_uv_bound_weight = 100
 
     # parameters
-    rendered_path_single = "./resources/(BEST) croaker/"
+    rendered_path_single = "./resources/(BEST) tuna/"
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
@@ -128,7 +128,8 @@ def train_fish():
     hyperparameter['image_weight'] = image_weight
     hyperparameter['alpha_weight'] = alpha_weight
     hyperparameter['root_pos_weight'] = root_pos_weight
-    hyperparameter['negative_ys_weight'] = 0.3
+    hyperparameter['negative_ys_weight'] = 0.0
+    ##hyperparameter['negative_ys_weight'] = 0.3
     ##hyperparameter['negative_ys_weight'] = 0.9
     hyperparameter['y_lr'] = y_lr
     hyperparameter['t_lr'] = t_lr
@@ -149,10 +150,11 @@ def train_fish():
 
     hyperparameter['fin_lr_epoch_list'] =   [0,     150,    300,    400,    500]
     ##hyperparameter['fin_lr_epoch_list'] =   [0,     15,    30,    40,    50]
-    hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-4,   3e-5,   3e-6]
-    hyperparameter['fin_y_lr_list'] =       [0,     0,      5e-2,   3e-2,   3e-2]
-    hyperparameter['fin_uv_lr_list'] =      [3e-2,  3e-3,   1e-4,   0,      0]
-    hyperparameter['fin_dir_lr_list'] =     [0,     5e-2,   3e-2,   3e-2,   3e-2]
+    hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-5,   3e-4,   3e-6]
+    hyperparameter['fin_y_lr_list'] =       [0,     0,      3e-2,   4e-2,   3e-2]
+    ##hyperparameter['fin_uv_lr_list'] =      [3e-2,  1e-3,   1e-4,   0,      0]
+    hyperparameter['fin_uv_lr_list'] =      [3e-2,  1e-6,   1e-5,   1e-4,      0]
+    hyperparameter['fin_dir_lr_list'] =     [0,     2e-2,   2e-3,   3e-2,   2e-2]
     hyperparameter['fin_expand_epoch_list'] =   [20000,   35000,    30000,    35000]
     hyperparameter['fin_dir_expand_list'] =     [0.1,   0.1,    0.1,    0.1]
 
@@ -209,6 +211,7 @@ def train_fish():
 
     ##################################### TRAINING #####################################
     loss_history = []
+    time_history = []
     epoch = 0
     for epoch in range(hyperparameter['num_epoch']):
         
@@ -242,7 +245,7 @@ def train_fish():
                                        epoch - hyperparameter['fin_start_train_epoch'])
         print(f"Epoch {epoch} - loss: {float(loss)}")
         loss_history.append(loss.detach().cpu().numpy().tolist())
-
+        time_history.append(time.time() - start_time)
 
     visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch + 1)
     visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch + 1, True)
@@ -254,9 +257,14 @@ def train_fish():
 
     export_hyperparameter_json(data['output_path'], data['hyperparameter'])
 
-    export_loss_history(data['output_path'], loss_history)
+    export_number_list(data['output_path'], loss_history, "loss_history")
+    export_number_list(data['output_path'], time_history, "time_history")
 
     export_meshes(fish_body_mesh, fish_fin_meshes, data['output_path'], data['hyperparameter']['texture_res'])
+
+    # export trained texture
+    if (epoch >= hyperparameter['texture_start_train_epoch']):
+        ian_utils.save_image(torch.clamp(fish_texture.texture, 0., 1.).permute(0, 2, 3, 1), Path(data['output_path'])/'texture', f'texture')
 
     valid_pixels = export_valid_texture_pixels(fish_body_mesh, fish_fin_meshes, renderer, fish_texture, data)
 
@@ -589,18 +597,6 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     return loss
 
 def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_meshes, renderer:ian_renderer.Renderer, dummy_texture, data, epoch = 0, add_gt = False, fish_texture:ian_fish_texture.FishTexture = None):
-    
-    # print(f"fish_body_mesh.top_spline_optimizer.key_ys = {fish_body_mesh.top_spline_optimizer.key_ys}")
-    # print(f"fish_body_mesh.top_spline_optimizer.key_ts = {fish_body_mesh.top_spline_optimizer.key_ts}")
-    # print(f"fish_body_mesh.bottom_spline_optimizer.key_ys = {fish_body_mesh.bottom_spline_optimizer.key_ys}")
-    # print(f"fish_body_mesh.bottom_spline_optimizer.key_ts = {fish_body_mesh.bottom_spline_optimizer.key_ts}")
-    # print(f"fish_body_mesh.origin_xy = {fish_body_mesh.origin_xy}")
-    # print(f"fish_body_mesh.length_x = {fish_body_mesh.length_x}")
-    # if (fish_fin_mesh is not None):
-    #     print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
-    #     print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
-    #     print(f"fish_fin_mesh.start_dir = {fish_fin_mesh.start_dir}")
-    #     print(f"fish_fin_mesh.end_dir = {fish_fin_mesh.end_dir}")
 
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
@@ -658,8 +654,8 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                 # set fin color and texture
                 if (fish_texture == None):
                     draw_color = (1, 0, 0)
-                    if (fin_name == 'pelvic_fin'):
-                        draw_color = (0, 1, 0)
+                    # if (fin_name == 'pelvic_fin'):
+                    #     draw_color = (0, 1, 0)
                     rendered_image += rendered_fin_image * torch.tensor(draw_color, dtype=torch.float, device='cuda', requires_grad=False)
                 else:
                     rendered_image += rendered_fin_image
@@ -735,11 +731,11 @@ def export_hyperparameter_json(path, hyperparameter):
 def import_fish_body_json(path, mesh:ian_fish_body_mesh.FishBodyMesh):
     mesh.import_from_json(path)
 
-def export_loss_history(path, loss_history):
-    filepath = os.path.join(path,'loss_history.txt')
+def export_number_list(path, number_list, filename):
+    filepath = os.path.join(path, f'{filename}.txt')
     with open(filepath, 'w') as fp:
-        for loss in loss_history:
-            fp.write(str(loss) + "\n")
+        for number in number_list:
+            fp.write(str(number) + "\n")
     print(f'file exported to {filepath}.')
 
 def export_meshes(fish_body_mesh, fish_fin_meshes, path, texture_res):
