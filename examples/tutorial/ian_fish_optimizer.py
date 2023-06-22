@@ -81,7 +81,7 @@ def train_fish():
     fin_uv_bound_weight = 100
 
     # parameters
-    rendered_path_single = "./resources/(BEST) tuna/"
+    rendered_path_single = "./resources/(BEST) koi/"
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
@@ -150,11 +150,11 @@ def train_fish():
 
     hyperparameter['fin_lr_epoch_list'] =   [0,     150,    300,    400,    500]
     ##hyperparameter['fin_lr_epoch_list'] =   [0,     15,    30,    40,    50]
-    hyperparameter['fin_t_lr_list'] =       [0,     0,      3e-5,   3e-4,   3e-6]
-    hyperparameter['fin_y_lr_list'] =       [0,     0,      3e-2,   4e-2,   3e-2]
+    hyperparameter['fin_t_lr_list'] =       [0,     0,      2e-5,   3e-5,   3e-6]
+    hyperparameter['fin_y_lr_list'] =       [0,     0,      1e-2,   2e-2,   2e-2]
     ##hyperparameter['fin_uv_lr_list'] =      [3e-2,  1e-3,   1e-4,   0,      0]
-    hyperparameter['fin_uv_lr_list'] =      [3e-2,  1e-6,   1e-5,   1e-4,      0]
-    hyperparameter['fin_dir_lr_list'] =     [0,     2e-2,   2e-3,   3e-2,   2e-2]
+    hyperparameter['fin_uv_lr_list'] =      [1e-2,  1e-6,   0,   0,      0]
+    hyperparameter['fin_dir_lr_list'] =     [0,     2e-2,   2e-3,   2e-3,   2e-3]
     hyperparameter['fin_expand_epoch_list'] =   [20000,   35000,    30000,    35000]
     hyperparameter['fin_dir_expand_list'] =     [0.1,   0.1,    0.1,    0.1]
 
@@ -627,13 +627,12 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
 
         # projected root position
         if (add_gt):
-            projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
-            pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='4', color='royalblue')
-            pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='3', color='royalblue')
             gt_body_mask_root_xys = data['root_segmentation']['body_mask']
             pylab.plot(gt_body_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[0][1]) * renderer.render_res[1], marker='4', color='white')
             pylab.plot(gt_body_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[1][1]) * renderer.render_res[1], marker='3', color='white')
-
+            projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
+            pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='4', color='royalblue')
+            pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='3', color='royalblue')
         # fin
         for fin_name in data['hyperparameter']['fin_list']:
             if (fin_name in fish_fin_meshes):
@@ -662,12 +661,12 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
 
                 # projected root position
                 if (add_gt):
-                    projected_start_xy, projected_end_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
-                    pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='*', color='salmon')
-                    pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='x', color='salmon')
                     gt_fin_mask_root_xys = data['root_segmentation'][f'{fin_name}_mask']
-                    pylab.plot(gt_fin_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[0][1]) * renderer.render_res[1], marker='*', color='white')
-                    pylab.plot(gt_fin_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[1][1]) * renderer.render_res[1], marker='x', color='white')
+                    pylab.plot(gt_fin_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[0][1]) * renderer.render_res[1], marker='x', color='white', markersize=5)
+                    pylab.plot(gt_fin_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[1][1]) * renderer.render_res[1], marker='x', color='white', markersize=5)
+                    projected_start_xy, projected_end_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
+                    pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='x', color='yellow', markersize=4)
+                    pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='x', color='yellow', markersize=4)                    
 
                 # print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
                 # print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
