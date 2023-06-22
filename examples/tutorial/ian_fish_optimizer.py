@@ -598,6 +598,16 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
 
 def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_meshes, renderer:ian_renderer.Renderer, dummy_texture, data, epoch = 0, add_gt = False, fish_texture:ian_fish_texture.FishTexture = None):
 
+    ### 
+    height = float(512)
+    width = float(512)
+    
+    fig = pylab.figure()
+    fig.set_size_inches(width/height, 1, forward=False)
+    ax = pylab.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    ###
+
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
     if (fish_texture == None):
@@ -628,11 +638,11 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
         # projected root position
         if (add_gt):
             gt_body_mask_root_xys = data['root_segmentation']['body_mask']
-            pylab.plot(gt_body_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[0][1]) * renderer.render_res[1], marker='4', color='white')
-            pylab.plot(gt_body_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[1][1]) * renderer.render_res[1], marker='3', color='white')
+            ax.plot(gt_body_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[0][1]) * renderer.render_res[1], marker='4', color='white', markersize=1, markeredgewidth=0.2)
+            ax.plot(gt_body_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_body_mask_root_xys[1][1]) * renderer.render_res[1], marker='3', color='white', markersize=1, markeredgewidth=0.2)
             projected_start_xy, projected_end_xy = fish_body_mesh.get_projected_start_and_end_positions(renderer, data['metadata'])
-            pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='4', color='royalblue')
-            pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='3', color='royalblue')
+            ax.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='4', color='royalblue', markersize=1, markeredgewidth=0.2)
+            ax.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='3', color='royalblue', markersize=1, markeredgewidth=0.2)
         # fin
         for fin_name in data['hyperparameter']['fin_list']:
             if (fin_name in fish_fin_meshes):
@@ -662,11 +672,11 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                 # projected root position
                 if (add_gt):
                     gt_fin_mask_root_xys = data['root_segmentation'][f'{fin_name}_mask']
-                    pylab.plot(gt_fin_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[0][1]) * renderer.render_res[1], marker='x', color='white', markersize=5)
-                    pylab.plot(gt_fin_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[1][1]) * renderer.render_res[1], marker='x', color='white', markersize=5)
+                    ax.plot(gt_fin_mask_root_xys[0][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[0][1]) * renderer.render_res[1], marker='x', color='white', markersize=1, markeredgewidth=0.2)
+                    ax.plot(gt_fin_mask_root_xys[1][0] * renderer.render_res[0], (1-gt_fin_mask_root_xys[1][1]) * renderer.render_res[1], marker='x', color='white', markersize=1, markeredgewidth=0.2)
                     projected_start_xy, projected_end_xy = fish_fin_mesh.get_projected_start_and_end_positions(fish_body_mesh, renderer, data['metadata'])
-                    pylab.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='x', color='yellow', markersize=4)
-                    pylab.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='x', color='yellow', markersize=4)                    
+                    ax.plot(projected_start_xy[0].cpu() * renderer.render_res[0], (1-projected_start_xy[1].cpu()) * renderer.render_res[1], marker='x', color='yellow', markersize=0.8, markeredgewidth=0.2)
+                    ax.plot(projected_end_xy[0].cpu() * renderer.render_res[0], (1-projected_end_xy[1].cpu()) * renderer.render_res[1], marker='x', color='yellow', markersize=0.8, markeredgewidth=0.2)                    
 
                 # print(f"fish_fin_mesh.start_uv = {fish_fin_mesh.start_uv}")
                 # print(f"fish_fin_mesh.end_uv = {fish_fin_mesh.end_uv}")
@@ -691,21 +701,28 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
                 gt_fin_mask = data['fin_masks'][fin_name + '_mask'].cuda()
                 rendered_image += gt_fin_mask * torch.tensor(gt_fin_draw_color, dtype=torch.float, device='cuda', requires_grad=False)
 
+
+    ### save image without frame
+    fig.add_axes(ax)
+    
+    ax.imshow(rendered_image[0].cpu().detach())
+    ###
+
     # # print(f"visualize_results: rendered_image.shape = {rendered_image.shape}")
     #pylab.imshow(soft_mask[0].repeat(3, 1, 1).permute(1,2,0).cpu().detach())
-    pylab.imshow(rendered_image[0].cpu().detach())
-    pylab.title(f'epoch: {image_name}')
+    #pylab.imshow(rendered_image[0].cpu().detach())
 
     # save or show image
     save_image = True
     if (save_image):
         fig_path = f"{data['output_path']}{image_name}.png"
-        pylab.savefig(fig_path)
+        pylab.savefig(fig_path, dpi = height)
         pylab.close()
         print(f'fig saved at {fig_path}')
         if (fish_texture is not None):
             ian_utils.save_image(torch.clamp(texture_map, 0., 1.).permute(0, 2, 3, 1), Path(data['output_path'])/'texture', f'{image_name}_texture')
     else:
+        pylab.title(f'epoch: {image_name}')
         pylab.waitforbuttonpress(0)
         pylab.cla()
 
