@@ -87,7 +87,7 @@ def train_fish():
     ian_utils.make_path(Path(output_path))
     ian_utils.make_path(Path(output_path)/'texture')
 
-    visualize_epoch_interval = 10
+    visualize_epoch_interval = 1000000
 
     key_size = 20
     lod_x = 40
@@ -215,6 +215,8 @@ def train_fish():
     epoch = 0
     for epoch in range(hyperparameter['num_epoch']):
         
+        if (epoch == hyperparameter['texture_start_train_epoch']):
+                visualize_results(fish_body_mesh, fish_fin_meshes, renderer, dummy_texture_map, data, epoch, False, fish_texture)
         # print result
         if (epoch % visualize_epoch_interval == 0 and (epoch >= hyperparameter['fin_start_train_epoch'] or True)):
             if (epoch >= hyperparameter['texture_start_train_epoch']):
