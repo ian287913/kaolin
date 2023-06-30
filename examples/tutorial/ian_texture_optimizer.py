@@ -83,7 +83,7 @@ def save_image(rendered_image, folder_path, filename):
     print(f'image saved at {file_path}')
     # ian_utils.save_image(torch.clamp(rendered_image, 0., 1.).permute(0, 2, 3, 1), Path(folder_path)/'texture', filename)
 
-def render_front_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertices, faces, uvs, face_uvs):
+def render_front_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertices, faces, uvs, face_uvs, offset = None):
     rendered_image = None
     # body
     rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params_with_mesh_data(
@@ -96,7 +96,8 @@ def render_front_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertice
         faces=faces,
         face_uvs=face_uvs,
         sigmainv = 17000,
-        texture_map=texture_map)
+        texture_map=texture_map,
+        offset=offset)
     
     return rendered_image, mask
 
@@ -238,11 +239,18 @@ def train_texture_iter(mesh:dict,
                        epoch):
     image_weight = hyperparameter['image_weight']
     
+    # jitter the camera to reduce unsampled texture pixels
+    jitter_offset_range = 0
+    for idx, lr_epoch in enumerate(hyperparameter['texture_jitter_epoch_list']):
+        if (epoch >= lr_epoch):
+            jitter_offset_range = hyperparameter['texture_jitter_range_list'][idx]
+    jitter_offset = torch.tensor((random.normal(0, jitter_offset_range), random.normal(0, jitter_offset_range), random.normal(0, 0)), dtype=torch.float, device='cuda', requires_grad=False)
+
     # reset texture
     training_texture.zero_grad()
 
     # render mesh
-    rendered_image, triangle_mask = render_front_mesh(data, training_texture.texture, renderer, mesh['vertices'], mesh['faces'], mesh['uvs'], mesh['face_uvs'])
+    rendered_image, triangle_mask = render_front_mesh(data, training_texture.texture, renderer, mesh['vertices'], mesh['faces'], mesh['uvs'], mesh['face_uvs'], offset=jitter_offset)
     
     ### Image Losses ###
     image_loss = torch.mean(torch.abs(rendered_image - front_view_rgb.cuda()))

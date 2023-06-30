@@ -100,16 +100,16 @@
             0.1
         ],
         "texture_jitter_epoch_list": [
-            0,
-            30,
-            60,
-            80
+            1000,
+            20000,
+            30000,
+            40000
         ],
         "texture_jitter_range_list": [
+            0.1,
+            0.02,
             0.01,
-            0.005,
-            0.001,
-            0.00
+            0.001
         ],
         "fin_list": [
             "anal_fin",
