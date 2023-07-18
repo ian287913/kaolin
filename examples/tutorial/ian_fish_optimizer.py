@@ -92,6 +92,8 @@ def train_fish():
     key_size = 20
     lod_x = 40
     lod_y = 10
+    lod_x_fin = 40
+    lod_y_fin = 4
 
     # texture map
     # imported_texture_map = ian_utils.import_rgb(os.path.join(rendered_path_single, f'{0}_texture.png'))
@@ -119,6 +121,8 @@ def train_fish():
     hyperparameter['key_size'] = key_size
     hyperparameter['lod_x'] = lod_x
     hyperparameter['lod_y'] = lod_y
+    hyperparameter['lod_x_fin'] = lod_x_fin
+    hyperparameter['lod_y_fin'] = lod_y_fin
 
     hyperparameter['render_res'] = render_res
     hyperparameter['texture_res'] = texture_res
@@ -371,6 +375,9 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
                   epoch):
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
+    lod_x_fin = data['hyperparameter']['lod_x_fin']
+    lod_y_fin = data['hyperparameter']['lod_y_fin']
+    
     image_weight = data['hyperparameter']['image_weight']
     
     # override lr
@@ -385,7 +392,7 @@ def train_texture(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh,
             fish_body_mesh.update_mesh(lod_x, lod_y)
             # also update fins
             for fin_name, fin_mesh in fish_fin_meshes.items():
-                fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+                fin_mesh.update_mesh(fish_body_mesh, lod_x_fin, lod_y_fin)
     
     # reshape uvs
     all_meshes = list(fish_fin_meshes.values())
@@ -520,6 +527,9 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
+    lod_x_fin = data['hyperparameter']['lod_x_fin']
+    lod_y_fin = data['hyperparameter']['lod_y_fin']
+    
     alpha_weight = data['hyperparameter']['alpha_weight']
     negative_ys_weight = data['hyperparameter']['negative_ys_weight']
     fin_uv_bound_weight = data['hyperparameter']['fin_uv_bound_weight']
@@ -558,7 +568,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
         alpha_weight = 0
 
     fish_fin_mesh.zero_grad()
-    fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y)
+    fish_fin_mesh.update_mesh(fish_body_mesh, lod_x_fin, lod_y_fin)
     # render the fin
     rendered_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
         elev = data['metadata']['cam_elev'], 
@@ -581,7 +591,7 @@ def train_fin_mesh(fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh, fish_body_mesh,
     alpha_loss = torch.mean(torch.abs(soft_mask - gt_fin_mask[:,:,0].cuda())) + torch.mean(torch.clamp(gt_fin_mask[:,:,0].cuda() - soft_mask, min=0.0, max=1.0))
     ##alpha_loss = kal.metrics.render.mask_iou(soft_mask, gt_fin_mask[:,:,0].cuda().unsqueeze(0))
     ### Negative Ys Losses ###
-    sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x)
+    sil_spline_negative_ys_loss = fish_fin_mesh.sil_spline_optimizer.calculate_negative_ys_loss(lod_x_fin)
     negative_ys_loss = sil_spline_negative_ys_loss
     ### Uv Bound Losses ###
     fin_uv_bound_loss = fish_fin_mesh.calculate_uv_bound_loss()
@@ -612,6 +622,9 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
 
     lod_x = data['hyperparameter']['lod_x']
     lod_y = data['hyperparameter']['lod_y']
+    lod_x_fin = data['hyperparameter']['lod_x_fin']
+    lod_y_fin = data['hyperparameter']['lod_y_fin']
+    
     if (fish_texture == None):
         texture_map = dummy_texture
     else:
@@ -650,7 +663,7 @@ def visualize_results(fish_body_mesh:ian_fish_body_mesh.FishBodyMesh, fish_fin_m
             if (fin_name in fish_fin_meshes):
                 fish_fin_mesh:ian_fish_fin_mesh.FishFinMesh = fish_fin_meshes[fin_name]
                 # render mesh
-                fish_fin_mesh.update_mesh(fish_body_mesh, lod_x, lod_y,gen_left_surface=True, gen_right_surface=True)
+                fish_fin_mesh.update_mesh(fish_body_mesh, lod_x_fin, lod_y_fin,gen_left_surface=True, gen_right_surface=True)
                 rendered_fin_image, mask, soft_mask = renderer.render_image_and_mask_with_camera_params(
                     elev = data['metadata']['cam_elev'], 
                     azim = data['metadata']['cam_azim'], 
