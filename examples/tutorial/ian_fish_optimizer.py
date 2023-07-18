@@ -81,19 +81,19 @@ def train_fish():
     fin_uv_bound_weight = 100
 
     # parameters
-    rendered_path_single = "./resources/(BEST) koi/"
+    rendered_path_single = "./resources/(BEST) tuna/"
     str_date_time = datetime.fromtimestamp(datetime.now().timestamp()).strftime("%Y%m%d_%H_%M_%S")
     output_path = './dibr_output/' + str_date_time + '/'
     ian_utils.make_path(Path(output_path))
     ian_utils.make_path(Path(output_path)/'texture')
 
-    visualize_epoch_interval = 1000000
+    visualize_epoch_interval = 50
 
     key_size = 20
     lod_x = 40
     lod_y = 10
     lod_x_fin = 40
-    lod_y_fin = 4
+    lod_y_fin = 10
 
     # texture map
     # imported_texture_map = ian_utils.import_rgb(os.path.join(rendered_path_single, f'{0}_texture.png'))
