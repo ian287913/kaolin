@@ -1,5 +1,7 @@
 {
     "parameters": {
+        "grow_mode": "double_sided",
+        "wave_angle": -0.2,
         "start_uv": [
             0.5,
             0.5
