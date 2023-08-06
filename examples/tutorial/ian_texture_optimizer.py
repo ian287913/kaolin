@@ -81,7 +81,6 @@ def show_image(rendered_image):
 def save_image(rendered_image, folder_path, filename):
     file_path = ian_utils.save_image(torch.clamp(rendered_image, 0., 1.), Path(folder_path), filename)
     print(f'image saved at {file_path}')
-    # ian_utils.save_image(torch.clamp(rendered_image, 0., 1.).permute(0, 2, 3, 1), Path(folder_path)/'texture', filename)
 
 def render_front_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertices, faces, uvs, face_uvs, offset = None):
     rendered_image = None
@@ -102,8 +101,7 @@ def render_front_mesh(data, texture_map, renderer:ian_renderer.Renderer, vertice
     return rendered_image, mask
 
 def mirror_mesh(vertices:torch.Tensor, faces:torch.Tensor, uvs:torch.Tensor, face_uvs:torch.Tensor):
-    ##inversed_vertices = vertices.clone().detach() * torch.tensor((1, 1, -1), dtype=vertices.dtype, device=vertices.device, requires_grad=False)
-    inversed_vertices = vertices.clone().detach()## * torch.tensor((1, 1, -1), dtype=vertices.dtype, device=vertices.device, requires_grad=False)
+    inversed_vertices = vertices.clone().detach()
     inversed_vertices[:, :, 2] *=  torch.tensor((-1), dtype=vertices.dtype, device=vertices.device, requires_grad=False)
     inversed_faces = faces.clone().detach()
     temp = inversed_faces[:,1].clone().detach()
@@ -114,10 +112,6 @@ def mirror_mesh(vertices:torch.Tensor, faces:torch.Tensor, uvs:torch.Tensor, fac
     merged_faces = torch.cat((faces.clone().detach(), inversed_faces + vertices.shape[1]), 0)
     merged_uvs = torch.cat((uvs, uvs), 1)
     merged_face_uvs = kal.ops.mesh.index_vertices_by_faces(merged_uvs, merged_faces).detach()
-    # merged_vertices = torch.cat((vertices.clone().detach(), vertices.clone().detach()), 1)
-    # merged_faces = torch.cat((faces, faces), 0)
-    # merged_uvs = torch.cat((uvs, uvs), 1)
-    # merged_face_uvs = torch.cat((face_uvs, face_uvs), 1)
 
     print(f'')
     print(f'vertices.shape = {vertices.shape}')

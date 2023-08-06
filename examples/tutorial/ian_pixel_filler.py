@@ -105,40 +105,13 @@ class PixelFiller:
         return (x_images, x_rects)
     
     @staticmethod
-    def Merge_Image_2(images, background_image, rects):
-        #x_offset = 0
+    def Merge_Image(images, background_image, rects):
         for x in range(len(images)):
-            #print(f"x_offset = {x_offset}")
-            #y_offset = 0
             for y in range(len(images[x])):
-                # print(f"y_offset = {y_offset}")
-
-                # print(f"shape of {x},{y} = {images[x][y].shape}")
-                
-                # x_end = x_offset + images[x][y].shape[0]
-                # y_end = y_offset + images[x][y].shape[1]
                 rect = rects[x][y]
-
-                # print(f"overriting at [{x_offset}:{x_end},{y_offset}:{y_end}]")
                 print(f"overriting at [{rect['start_x']}:{rect['end_x']},{rect['start_y']}:{rect['end_y']}]")
-
-                #background_image[x_offset:x_end, y_offset:y_end, :] = images[x][y][:, :, :]
                 background_image[rect['start_x']:rect['end_x'], rect['start_y']:rect['end_y'], :] = images[x][y][:, :, :]
-
-                #y_offset += images[x][y].shape[1]
-
-            #x_offset += images[x][0].shape[0]
         return background_image
-
-
-    @staticmethod
-    def Merge_Image(images:torch.Tensor):
-        merged_ys = []
-        for x in range(len(images)):
-             merged_ys.append(torch.cat(images[x], dim = 1))
-        merged_xs = torch.cat(merged_ys, dim = 0)
-
-        return merged_xs
 
     @staticmethod
     def Fill_pixels(pixels_path:Path, mask_path:Path, iter_quota, grid_size = 3):
@@ -155,19 +128,11 @@ class PixelFiller:
                 splitted_images[x][y] = filled_pixels
                 splitted_masks[x][y] = filled_mask
         
-        
         background_image = pixels.clone()
         background_mask = mask.clone()
 
-        # background_image = torch.ones([pixels.shape[0], pixels.shape[1], pixels.shape[2]], dtype=pixels.dtype, device=pixels.device)
-        # background_mask = torch.ones([pixels.shape[0], pixels.shape[1], pixels.shape[2]], dtype=pixels.dtype, device=pixels.device)
-
-
-        # merged_images = PixelFiller.Merge_Image(splitted_images)
-        # merged_masks = PixelFiller.Merge_Image(splitted_masks)
-        merged_images = PixelFiller.Merge_Image_2(splitted_images, background_image, image_rects)
-        merged_masks = PixelFiller.Merge_Image_2(splitted_masks, background_mask, mask_rects)
-
+        merged_images = PixelFiller.Merge_Image(splitted_images, background_image, image_rects)
+        merged_masks = PixelFiller.Merge_Image(splitted_masks, background_mask, mask_rects)
 
         print(f'merged_images.shape = {merged_images.shape}')
         print(f'merged_masks.shape = {merged_masks.shape}')
@@ -179,15 +144,9 @@ class PixelFiller:
         print(f'shaped_filled_pixels.shape = {shaped_filled_pixels.shape}')
 
         return (shaped_filled_pixels, shaped_filled_mask)
-        # saved_path = ian_utils.save_image(shaped_filled_pixels, Path('./'), name)
-        # ian_utils.save_image(shaped_filled_mask, Path('./'), name + "_mask")
-        # print(f'image saved as {saved_path}')
 
 
 if __name__ == '__main__':
-    # assert (len(sys.argv) == 5), 'usage: python ian_pixel_filler.py <PIXEL_PATH> <MASK_PATH> <OUTPUT_NAME> <ITER_QUOTA>'
-    # PixelFiller.Fill_pixels(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))
-    
     working_dir = Path(input("working dir:"))
     iter_quota = int(input("iter quota:"))
 
