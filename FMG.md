@@ -64,4 +64,7 @@ e: exit
         ```
 - 若輸入`$ s`，則啟動hermite spline的optimization測試，基本上不會用到。
 - 若輸入`$ m`，則啟動mask segmentation功能
-    - 需要接著輸入目標資料夾路徑，例如"C:\Users\ian28\Documents\Github\kaolin\examples\tutorial\resources\(FREE) Long Fin White Cloud"
+    - 需要接著輸入目標資料夾路徑(絕對路徑)，例如: `$ "C:\Users\xxx\kaolin (FMG)\examples\tutorial\resources\(FREE) Long Fin White Cloud"`
+    - "./tools/ian_mask_segmentation.py"會讀入目標資料夾底下的所有"*_mask.png"圖片，此時需要使用滑鼠左鍵做人工標記。
+    - 所有masks都標記完成後，將會輸出"marked_roots.json"到目標資料夾中，若有舊的"marked_roots.json"將會被覆蓋。
+- 若輸入`$ p`，則啟動貼圖顏色擴充功能
