@@ -8,17 +8,7 @@
     - to install pytorch with cuda support:
         https://pytorch.org/get-started/previous-versions/
     - 我使用Anaconda管理python套件環境，"kaolin_environment.yml"檔案內列出了我使用的套件與版本。
-- 檔案結構:
-```
-kaolin (FMG)/                                
-├─ examples/                            
-│  ├─ tutorial/                                 # FMG 實作，有"ian_"開頭的
-│  │  ├─ ian_activate_conda_kaolin.bat          
-│  │  ├─ dibr_output/
-│  │  ├─ resources/
-
-```
-## Repository structure
+## 檔案結構
 | Path                                                | Description <img width=200>
 |:----------------------------------------------------| :---
 | kaolin (FMG)/                                       | Root folder 
@@ -27,11 +17,6 @@ kaolin (FMG)/
 | &boxv;&nbsp; &boxv;&nbsp; &boxvr;&nbsp; ian_activate_conda_kaolin.bat     | FMG主要功能使用介面
 | &boxv;&nbsp; &boxv;&nbsp; &boxvr;&nbsp; dibr_output/      | 存放所有生成結果
 | &boxv;&nbsp; &boxv;&nbsp; &boxvr;&nbsp; resources/ | 存放所有生成時所需的資料
-| &boxv;&nbsp; &boxv;&nbsp; &boxvr;&nbsp; training    | The `Trainer` class and related code
-| &boxv;&nbsp; &boxvr;&nbsp; latent_paint             | Code for `Latent-Paint` training
-| &boxv;&nbsp; &boxv;&nbsp; &boxvr;&nbsp; configs     | Config structure for training
-| &boxv;&nbsp; &boxv;&nbsp; &boxvr;&nbsp; models      | Textured-Mesh models
-| &boxv;&nbsp; &boxv;&nbsp; &boxvr;&nbsp; training    | The `Trainer` class and related code
 
 ## ian_activate_conda_kaolin.bat 使用說明
 - 執行"ian_activate_conda_kaolin.bat"後，會自動啟動Anaconda中建立的"kaolin"環境，並且提供以下功能選擇:
@@ -66,5 +51,13 @@ e: exit
 - 若輸入`$ m`，則啟動mask segmentation功能
     - 需要接著輸入目標資料夾路徑(絕對路徑)，例如: `$ "C:\Users\xxx\kaolin (FMG)\examples\tutorial\resources\(FREE) Long Fin White Cloud"`
     - "./tools/ian_mask_segmentation.py"會讀入目標資料夾底下的所有"*_mask.png"圖片，此時需要使用滑鼠左鍵做人工標記。
+        - 可以參考簡報第13頁，魚鰭需要先標記左下方位置，再標記右下方；魚身需要先標記最左側中央位置，再標記最右側中央位置。
+        - 滑鼠滾輪可以縮放圖片大小，中鍵長按拖曳圖片。
     - 所有masks都標記完成後，將會輸出"marked_roots.json"到目標資料夾中，若有舊的"marked_roots.json"將會被覆蓋。
-- 若輸入`$ p`，則啟動貼圖顏色擴充功能
+- 若輸入`$ p`，則啟動貼圖顏色擴散功能
+    - 需要接著輸入目標資料夾路徑(絕對路徑)，例如: `$ C:\Users\xxx\kaolin (FMG)\examples\tutorial\dibr_output\20230802_17_29_44 (FREE) Long Fin White Cloud\texture`
+    - "ian_pixel_filler.py"會讀取此資料夾內，由FMG事先生成的稀疏貼圖"texture_rgb.png"與mask"valid_pixels_rgb.png"
+    - 接著需要輸入擴散步數(iter quota)，建議輸入30: `$ 30`
+    - "ian_pixel_filler.py"會輸出擴散後的貼圖與mask到目標資料夾，例如"filled_texture_30_rgb.png"與"filled_valid_pixels_30_rgb.png"
+- 若輸入`$ c`，則清空CLI視窗文字
+- 若輸入`$ e`，則離開功能表，但保持在"kaolin"conda environment
